@@ -35,7 +35,7 @@ description: A browser-based tactical arena training game.
       <div class="crosshair" id="crosshair"></div>
       <div class="hit-marker" id="hit-marker"></div>
       <div class="hit-confirmation" id="hit-confirmation" aria-live="polite"></div>
-      <div class="replay-indicator" id="replay-indicator" hidden>FINAL ELIMINATION / REPLAY</div>
+      <div class="replay-indicator" id="replay-indicator" hidden>ELIMINATION CAM / REPLAY</div>
       <div class="weapon-toast" id="weapon-toast"></div>
       <div class="combat-message" id="combat-message" aria-live="polite"></div>
       <div class="scope-overlay" id="scope-overlay" hidden aria-hidden="true">
@@ -129,10 +129,10 @@ description: A browser-based tactical arena training game.
           <h1>SELECT A MODE</h1>
           <p>Host a private peer-to-peer room or join with its invite code. Public room discovery requires a separate directory service.</p>
           <div class="mode-grid">
-            <button class="mode-card selected" type="button" data-mode="ffa-waves"><strong>CO-OP WAVES</strong><span>Survive escalating enemy waves together.</span></button>
+            <button class="mode-card selected" type="button" data-mode="ffa-waves"><strong>CO-OP</strong><span>Explore together; private rooms do not spawn training bots.</span></button>
             <button class="mode-card" type="button" data-mode="duel"><strong>1 VS 1</strong><span>One opponent. First elimination wins.</span></button>
-            <button class="mode-card" type="button" data-mode="ffa"><strong>FREE-FOR-ALL</strong><span>Every operator for themselves.</span></button>
-            <button class="mode-card" type="button" data-mode="tdm"><strong>TEAM DEATHMATCH</strong><span>Two teams compete for eliminations.</span></button>
+            <button class="mode-card" type="button" data-mode="ffa"><strong>FREE-FOR-ALL</strong><span>Two-player private rooms; head-to-head until more peers are supported.</span></button>
+            <button class="mode-card" type="button" data-mode="tdm"><strong>TEAM DEATHMATCH</strong><span>One operator per team in the current two-player rooms.</span></button>
           </div>
           <div class="menu-actions menu-actions--row">
             <button type="button" id="public-servers-button">Create or join a room</button>

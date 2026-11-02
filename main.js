@@ -175,6 +175,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       let selectedMapId = "arena";
       let map = mapDefinitions[activeMapId].grid;
       let mapGroup = null;
+      let mapWalls = null;
       let dynamicMapLights = [];
       let animatedMapProps = [];
       let playerPitch = 0;
@@ -328,6 +329,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
         const wallCount = map.reduce((total, row) => total + [...row].filter(cell => cell === "1").length, 0);
         const walls = new THREE.InstancedMesh(cachedBoxGeometry(1, 1, 1), wallMaterial, wallCount);
+        walls.name = "arena-walls";
         walls.castShadow = true;
         walls.receiveShadow = true;
         walls.frustumCulled = false;
@@ -343,6 +345,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           walls.setMatrixAt(wallIndex++, transform.matrix);
         }));
         walls.instanceMatrix.needsUpdate = true;
+        mapWalls = walls;
         mapGroup.add(walls);
 
         if (mapId === "battlefield") {
@@ -439,6 +442,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         activeMapId = mapId;
         map = mapDefinitions[mapId].grid;
         if (mapGroup) scene.remove(mapGroup);
+        mapWalls = null;
         mapGroup = new THREE.Group();
         mapGroup.name = `map-${mapId}`;
         scene.add(mapGroup);
@@ -876,7 +880,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       }
 
       function applyRemoteShot(angle, pitch, weaponIndex) {
-        if (!remotePlayer) return;
+        if (!running || gameOver || gameMode === "coop" || player.health <= 0 || !remotePlayer) return;
         const weapon = weapons[weaponIndex];
         const dx = player.x - remotePlayer.x;
         const dy = player.y - remotePlayer.y;
@@ -895,11 +899,18 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         window.setTimeout(() => document.querySelector("#damage-overlay").classList.remove("visible"), 300);
         setCombatMessage(`HIT BY ${weapon.short}`);
         sendPlayerState();
-        if (player.health === 0) endGame();
+        if (player.health === 0) {
+          sendPeerMessage({ type: "match-end" });
+          endGame({ replay: true });
+        }
       }
 
       function handlePeerData(data) {
         if (!data || typeof data !== "object") return;
+        if (data.type === "match-end" && networkConnection?.open && !gameOver) {
+          endGame({ won: true });
+          return;
+        }
         if (data.type === "room-config" && networkRole !== "host" &&
           ["ffa-waves", "duel", "ffa", "tdm"].includes(data.mode) &&
           typeof data.mapId === "string" && mapDefinitions[data.mapId]) {
@@ -907,7 +918,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           selectedMapId = data.mapId;
           gameMode = data.mode === "ffa-waves" ? "coop" : data.mode;
           if (activeMapId !== data.mapId) loadMap(data.mapId);
-          if (running) startGame(gameMode, true);
+          if (running) startGame(gameMode, true, { acquirePointerLock: false });
           return;
         }
         if (data.type === "ack" && networkRole !== "host" &&
@@ -932,8 +943,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           if (networkRole !== "host" && activeMapId !== data.mapId) {
             loadMap(data.mapId);
             selectedMapId = data.mapId;
-            player.x = mapDefinitions[data.mapId].spawn.x;
-            player.y = mapDefinitions[data.mapId].spawn.y;
+            const spawn = getPlayerSpawnPosition();
+            player.x = spawn.x;
+            player.y = spawn.y;
           }
           if (data.mapId !== activeMapId) return;
           const accepted = networkManager.pushSnapshot(data, {
@@ -955,6 +967,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
               position: accepted.position, mapId: activeMapId
             });
           }
+          if (accepted.health === 0 && running && !gameOver) endGame({ won: true });
           return;
         }
         if (data.type === "shot" && Number.isFinite(data.angle) && Number.isFinite(data.pitch) &&
@@ -997,7 +1010,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           updateRoomPanel(`Connected to ${connection.peer}. Starting ${roomMode.toUpperCase()}...`);
           selectedMapId = roomMap;
           gameMode = roomMode === "ffa-waves" ? "coop" : roomMode;
-          startGame(gameMode, true);
+          startGame(gameMode, true, { acquirePointerLock: false });
           if (networkRole === "host" && roomConfiguration) {
             sendPeerMessage({ type: "room-config", mode: roomConfiguration.mode, mapId: roomConfiguration.mapId });
           }
@@ -1016,7 +1029,10 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           setRoomMessage("The peer connection closed.");
           updateRoomPanel("The peer connection closed.");
           updateRoomConfigurationControls();
-          if (running) pauseGame();
+          if (running) {
+            wave = 0;
+            pauseGame();
+          }
         });
         connection.on("error", error => {
           console.error("Peer connection error.", error);
@@ -1232,6 +1248,21 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function isWaveMode() {
         return gameMode === "waves" || gameMode === "coop";
+      }
+
+      function getPlayerSpawnPosition(role = networkRole) {
+        const definition = mapDefinitions[activeMapId];
+        const defaultSpawn = definition.spawn;
+        if (role !== "guest" || !networkConnection?.open) return { ...defaultSpawn };
+        const guestSpawns = (definition.enemySpawns || [])
+          .map(point => ({ x: point.x, y: -point.z }))
+          .filter(position => canOccupyOnMap(map, position.x, position.y, .24));
+        const visibleSpawns = guestSpawns.filter(position => botAI.hasLineOfSight(map, defaultSpawn, position));
+        return (visibleSpawns.length ? visibleSpawns : guestSpawns).reduce((farthest, position) =>
+          Math.hypot(position.x - defaultSpawn.x, position.y - defaultSpawn.y) >
+          Math.hypot(farthest.x - defaultSpawn.x, farthest.y - defaultSpawn.y)
+            ? position
+            : farthest, { ...defaultSpawn });
       }
 
       function updateAimHud() {
@@ -1677,6 +1708,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         model.position.set(remotePlayer.x, 0, -remotePlayer.y);
         model.rotation.y = remotePlayer.angle - Math.PI / 2;
         model.userData.muzzleLight.intensity = remotePlayer.firing ? .75 : 0;
+        model.visible = remotePlayer.health > 0;
       }
 
       function getEnemySpawnPosition() {
@@ -1720,7 +1752,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function spawnWave() {
         wave++;
-        const count = isWaveMode() ? Math.min(3 + wave * 2, 15) :
+        const peerMatch = Boolean(networkConnection?.open);
+        const count = peerMatch ? 0 : isWaveMode() ? Math.min(3 + wave * 2, 15) :
           gameMode === "duel" ? 1 : gameMode === "tdm" ? 4 : 5;
         const bruteIndex = gameMode === "duel" || (isWaveMode() ? wave < 2 : Math.random() >= .2)
           ? -1
@@ -1746,7 +1779,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           ? `WAVE ${String(wave).padStart(2, "0")}`
           : `MATCH ${String(wave).padStart(2, "0")}`;
         const modeTitle = { waves: "hostiles in the area", coop: "hostiles in the area", duel: "training opponent", ffa: "training opponents", tdm: "training opponents" }[gameMode];
-        document.querySelector("#objective").textContent = `${count} ${modeTitle}`;
+        document.querySelector("#objective").textContent = peerMatch
+          ? gameMode === "coop" ? "Peer co-op / no training bots in private rooms" : "Find and eliminate the opposing operator"
+          : `${count} ${modeTitle}`;
       }
 
       function castRay(angle) {
@@ -1889,13 +1924,27 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           const subject = playbackSample.player;
           const angle = subject.angle;
           camera.position.set(
-            subject.x + Math.cos(angle) * 2.8,
-            2.2 + Math.max(0, subject.pitch || 0) * .2,
-            -subject.y + Math.sin(angle) * 2.8
+            subject.x - Math.cos(angle) * 3.2 + Math.sin(angle) * .45,
+            2.35 + Math.max(0, subject.pitch || 0) * .15,
+            -subject.y + Math.sin(angle) * 3.2 - Math.cos(angle) * .45
           );
-          camera.lookAt(subject.x, 1.05, -subject.y);
+          const replayTarget = new THREE.Vector3(subject.x, 1.1, -subject.y);
+          const cameraOffset = camera.position.clone().sub(replayTarget);
+          cameraRaycaster.set(replayTarget, cameraOffset.clone().normalize());
+          cameraRaycaster.near = 0;
+          cameraRaycaster.far = cameraOffset.length();
+          const replayObstruction = mapWalls ? cameraRaycaster.intersectObject(mapWalls, false)[0] : null;
+          if (replayObstruction) {
+            camera.position.copy(replayTarget).addScaledVector(
+              cameraOffset.normalize(),
+              Math.max(.45, replayObstruction.distance - .2)
+            );
+          }
+          camera.lookAt(replayTarget);
           document.querySelector("#replay-indicator").hidden = false;
+          document.querySelector(".stage").classList.add("is-replaying");
         } else {
+          document.querySelector(".stage").classList.remove("is-replaying");
           const cameraOffset = viewDirection.clone().multiplyScalar(-.12);
           camera.position.copy(eyePosition).add(cameraOffset);
           cameraRaycaster.set(eyePosition, cameraOffset.clone().normalize());
@@ -1910,6 +1959,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           }
           camera.rotation.set(playerPitch, player.angle - Math.PI / 2, 0);
         }
+        if (remoteModel) remoteModel.visible = !playbackSample &&
+          Boolean(remotePlayer?.health > 0 && networkConnection?.open);
         audioManager.setEnvironment(activeMapId, isInBattlefieldTrench());
         const flickerTime = performance.now() * .004;
         dynamicMapLights.forEach((light, index) => {
@@ -1934,6 +1985,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         document.querySelector("#crosshair").classList.toggle("targeting", hasAimTarget && !currentWeapon().scoped);
         document.querySelector("#scope-overlay").classList.toggle("targeting", hasAimTarget && currentWeapon().scoped);
         if (weaponAnchor) {
+          weaponAnchor.visible = !playbackSample;
           const moving = movementInput().forward !== 0 || movementInput().strafe !== 0;
           const sprinting = moving && isSprinting();
           const aimOffset = aiming && !currentWeapon().scoped;
@@ -2014,8 +2066,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           const spread = weapon.melee ? .52 :
             weapon.spread * (aiming ? .45 : 1) * (weapon.attachments.foregrip ? .78 : 1);
           const shotAngle = player.angle + (pelletCount === 1 ? 0 : (Math.random() - .5) * spread);
-          const wallHit = castRay(shotAngle);
-          const maxDistance = Math.min(weapon.melee ? 1.8 : weapon.range || 18, wallHit.distance - .04);
+          const maxDistance = weapon.melee ? 1.8 : weapon.range || 18;
           const targets = enemies
             .filter(enemy => gameMode !== "tdm" || enemy.team === 1)
             .map(enemy => enemyModels.get(enemy) || createEnemyModel(enemy));
@@ -2028,10 +2079,14 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             ).normalize()
           );
           raycaster.near = 0;
-          raycaster.far = Math.max(0, maxDistance);
+          raycaster.far = maxDistance;
+          const wallIntersection = mapWalls
+            ? raycaster.intersectObject(mapWalls, false)[0]
+            : null;
           const intersection = raycaster.intersectObjects(targets, true)
             .find(hit => hit.object.userData.isHitbox);
-          const target = intersection?.object.userData.enemyRef
+          const target = intersection?.object.userData.enemyRef &&
+            (!wallIntersection || intersection.distance < wallIntersection.distance - .015)
             ? {
               enemy: intersection.object.userData.enemyRef,
               distance: intersection.distance,
@@ -2041,19 +2096,20 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             : null;
           const tracerEnd = target
             ? target.point
-            : raycaster.ray.at(maxDistance, new THREE.Vector3());
+            : wallIntersection
+              ? wallIntersection.point
+              : raycaster.ray.at(maxDistance, new THREE.Vector3());
           vfxSystem.spawnBullet(muzzlePosition, tracerEnd, { color: target ? "#f5e8b0" : "#dfb96e" });
           if (target) {
-            const normal = intersection.face?.normal?.clone().transformDirection(intersection.object.matrixWorld) ||
-              new THREE.Vector3().subVectors(muzzlePosition, tracerEnd).normalize();
-            vfxSystem.spawnImpact(tracerEnd, normal, "#a2a08d", target.hitZone === "head" ? .16 : .11);
             addImpactParticles(tracerEnd, target.hitZone === "head" ? "#bcab7e" : "#f5d992");
-          } else if (wallHit.distance <= (weapon.range || 18)) {
+          } else if (wallIntersection && wallIntersection.distance <= maxDistance) {
+            const wallHit = castRay(shotAngle);
             const normal = wallHit.side === 0
               ? new THREE.Vector3(wallHit.rayX > 0 ? -1 : 1, 0, 0)
               : new THREE.Vector3(0, 0, wallHit.rayY > 0 ? 1 : -1);
-            const wallPoint = raycaster.ray.at(wallHit.distance, new THREE.Vector3());
-            vfxSystem.spawnImpact(wallPoint, normal, "#3b382e");
+            const wallNormal = wallIntersection.face?.normal?.clone()
+              .transformDirection(wallIntersection.object.matrixWorld) || normal;
+            vfxSystem.spawnImpact(wallIntersection.point, wallNormal, "#3b382e");
           }
           if (target) {
             const previous = hits.get(target.enemy);
@@ -2233,13 +2289,22 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             break;
           }
         }
-        if (enemies.length === 0 && running && isWaveMode()) {
+        if (enemies.length === 0 && running && isWaveMode() && !networkConnection?.open) {
           document.querySelector("#objective").textContent = "Sector clear - next wave inbound";
           spawnWave();
         }
+        const replayEnemies = enemies.map(enemy => ({ id: enemy.id, x: enemy.x, y: enemy.y, angle: enemy.faceAngle || 0 }));
+        if (remotePlayer && networkConnection?.open) {
+          replayEnemies.push({
+            id: "opponent",
+            x: remotePlayer.x,
+            y: remotePlayer.y,
+            angle: remotePlayer.angle || 0
+          });
+        }
         replayBuffer.record(performance.now(), {
           player: { x: player.x, y: player.y, angle: player.angle, pitch: playerPitch },
-          enemies: enemies.map(enemy => ({ id: enemy.id, x: enemy.x, y: enemy.y, angle: enemy.faceAngle || 0 }))
+          enemies: replayEnemies
         });
         damageMessageTimer = Math.max(0, damageMessageTimer - dt);
       }
@@ -2263,11 +2328,16 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         requestAnimationFrame(frame);
       }
 
-      function startGame(requestedMode = gameMode, fresh = gameOver) {
+      function startGame(requestedMode = gameMode, fresh = gameOver, { acquirePointerLock = true } = {}) {
         if (fresh || gameOver) {
           gameMode = requestedMode;
           if (activeMapId !== selectedMapId) loadMap(selectedMapId);
-          player.reset(mapDefinitions[activeMapId].spawn);
+          const spawn = getPlayerSpawnPosition();
+          player.reset(spawn);
+          if (networkConnection?.open) {
+            const opponentSpawn = getPlayerSpawnPosition(networkRole === "guest" ? "host" : "guest");
+            player.angle = Math.atan2(opponentSpawn.y - spawn.y, opponentSpawn.x - spawn.x);
+          }
           playerPitch = 0;
           weaponManager.resetAmmo();
           weaponManager.select(0);
@@ -2314,15 +2384,17 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         document.querySelector("#overlay-copy").textContent = gameMode === "waves"
           ? "Survive escalating hostile waves. Use WASD or the touch controls to move, aim and fire, and dash clear of danger."
           : networkConnection?.open
-            ? "Player positions, health, weapons, and shots sync directly between peers. Training enemies are simulated locally."
-            : "Eliminate the training bots. Create or join a private peer room to connect with another player.";
+            ? "Two-player peer match: positions, health, weapons, and shots sync directly. Training bots are disabled in connected rooms."
+            : "Eliminate the training opponent. Create or join a private peer room to play against another operator.";
         startButton.textContent = "Deploy";
         document.querySelector("#pause-button").textContent = "Pause";
         document.querySelector("#pause-button").disabled = false;
         document.querySelector("#pause-settings-button").hidden = true;
         returnMenuButton.hidden = true;
         if (wave === 0) spawnWave();
-        if (!window.matchMedia("(any-pointer: coarse)").matches) {
+        if (!acquirePointerLock) {
+          pointerLockUnavailable = true;
+        } else if (!window.matchMedia("(any-pointer: coarse)").matches) {
           const pointerLockRequest = canvas.requestPointerLock?.();
           if (pointerLockRequest && typeof pointerLockRequest.catch === "function") {
             pointerLockRequest.catch(() => { pointerLockUnavailable = true; });
@@ -2353,7 +2425,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         if (document.pointerLockElement === canvas) document.exitPointerLock();
       }
 
-      function endGame() {
+      function endGame({ won = false, replay = false } = {}) {
         if (gameOver) return;
         running = false; gameOver = true;
         audioManager.setCombatIntensity(0);
@@ -2372,16 +2444,22 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         replayButton.hidden = replayBuffer.frames.length < 2;
         replayButton.disabled = replayButton.hidden;
         const leaderboardReady = isWaveMode() ? Promise.resolve() : submitMatchResult();
-        document.querySelector("#overlay-kicker").textContent = `${isWaveMode() ? "MISSION" : "MATCH"} ENDED / SCORE ${player.score}`;
-        document.querySelector("#overlay-title").innerHTML = isWaveMode() ? "PERIMETER<br>BREACHED" : "MATCH<br>COMPLETE";
+        document.querySelector("#overlay-kicker").textContent = `${won ? "VICTORY" : isWaveMode() ? "MISSION ENDED" : "MATCH ENDED"} / SCORE ${player.score}`;
+        document.querySelector("#overlay-title").innerHTML = isWaveMode()
+          ? "PERIMETER<br>BREACHED"
+          : won ? "MATCH<br>WON" : "MATCH<br>COMPLETE";
         document.querySelector("#overlay-copy").textContent = isWaveMode()
           ? `You held for ${wave} wave${wave === 1 ? "" : "s"}. Reset and try again.`
-          : `${operatorName} finished the ${gameMode.toUpperCase()} match.`;
+          : networkConnection?.open
+            ? won
+              ? "The opposing operator was eliminated."
+              : "You were eliminated. Watch the final moments again or redeploy."
+            : `${operatorName} finished the ${gameMode.toUpperCase()} match.`;
         startButton.textContent = "Try again";
         returnMenuButton.hidden = false;
         document.querySelector("#pause-button").textContent = "Mission over";
         document.querySelector("#pause-button").disabled = true;
-        if (gameMode === "duel" && replayBuffer.frames.length >= 2) {
+        if (replay && replayBuffer.frames.length >= 2) {
           leaderboardReady.then(() => {
             window.setTimeout(() => {
               if (gameOver && !replayPlayback) playMatchReplay();

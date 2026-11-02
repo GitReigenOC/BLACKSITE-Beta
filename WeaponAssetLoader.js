@@ -17,6 +17,62 @@ export class WeaponAssetLoader {
       return typeof override === "string" ? { ...asset, url: override } : { ...asset, ...override };
     });
     this.loaded = new Map();
+    this.fallbacks = this.assets.map((asset, index) => this.createProceduralWeapon(index));
+  }
+
+  createProceduralWeapon(index) {
+    const group = new this.engine.Group();
+    group.position.set(0, -.08, -.12);
+    const receiverMaterial = new this.engine.MeshStandardMaterial({
+      color: index === 2 ? "#524936" : "#343a35",
+      roughness: .48,
+      metalness: .62
+    });
+    const darkMaterial = new this.engine.MeshStandardMaterial({
+      color: "#171b19",
+      roughness: .7,
+      metalness: .22
+    });
+    const addBox = (size, position, material = receiverMaterial) => {
+      const mesh = new this.engine.Mesh(new this.engine.BoxGeometry(...size), material);
+      mesh.position.set(...position);
+      mesh.castShadow = true;
+      group.add(mesh);
+      return mesh;
+    };
+
+    if (index === 4) {
+      addBox([.07, .045, .34], [0, 0, -.19]);
+      addBox([.055, .045, .27], [0, 0, -.49], darkMaterial);
+      addBox([.07, .13, .09], [0, -.075, .015], darkMaterial);
+      return group;
+    }
+
+    const isSniper = index === 1;
+    const isShotgun = index === 2;
+    const isSmg = index === 3;
+    const barrelLength = isSniper ? .58 : isShotgun ? .43 : isSmg ? .27 : .36;
+    const barrel = new this.engine.Mesh(
+      new this.engine.CylinderGeometry(isShotgun ? .035 : .025, isShotgun ? .04 : .035, barrelLength, 8),
+      darkMaterial
+    );
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, .005, -.22 - barrelLength / 2);
+    barrel.castShadow = true;
+    group.add(barrel);
+    addBox([isSniper ? .14 : .15, .12, isSniper ? .3 : .27], [0, 0, -.19]);
+    addBox([.12, .09, .2], [0, 0, .045], darkMaterial);
+    addBox([.075, .13, .12], [0, -.105, -.17], darkMaterial);
+    addBox([.11, .13, .1], [0, -.075, .015], darkMaterial);
+
+    if (isSniper) {
+      addBox([.065, .065, .3], [0, .105, -.2], darkMaterial);
+      addBox([.11, .085, .12], [0, .105, -.19]);
+    } else {
+      addBox([.045, .045, .09], [0, .078, -.2], darkMaterial);
+    }
+    if (isShotgun) addBox([.09, .11, .16], [0, .035, -.41]);
+    return group;
   }
 
   async loadAll() {
@@ -49,8 +105,7 @@ export class WeaponAssetLoader {
 
   createInstance(index) {
     const entry = this.loaded.get(index);
-    if (!entry) return null;
-    return cloneSkeleton(entry.model);
+    return entry ? cloneSkeleton(entry.model) : cloneSkeleton(this.fallbacks[index]);
   }
 
   getMuzzle(instance, index) {
