@@ -2873,10 +2873,14 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           const inspectEnvelope = Math.sin(inspectProgress * Math.PI);
           const inspectStyle = currentWeapon().inspect;
           const inspectScale = currentWeapon().melee ? 1 + inspectEnvelope * .04 : 1;
+          const viewportHeight = canvas.clientHeight || window.innerHeight;
+          const viewportAspect = (canvas.clientWidth || window.innerWidth) / viewportHeight;
+          const aspectScale = THREE.MathUtils.clamp(viewportAspect / (16 / 9), .78, 1);
+          const viewModelScale = THREE.MathUtils.clamp(viewportHeight / 720, .78, 1.12) * aspectScale;
           const weaponBaseY = currentWeapon().melee ? -.12 : -.3;
           const weaponBaseZ = currentWeapon().melee ? -.55 : -.48;
           const targetWeaponPosition = new THREE.Vector3(
-            aimOffset ? .015 : .32,
+            aimOffset ? .015 : .32 * aspectScale,
             (aimOffset ? -.17 : weaponBaseY) + Math.sin(movementBob) * (sprinting ? .012 : .006) -
             weaponRecoil * .0008 - (dashTimer > 0 ? .06 : 0),
             weaponBaseZ);
@@ -2897,7 +2901,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           muzzleLight.intensity = muzzleFlash > 0 ? 3.5 : 0;
           weaponModels.forEach((model, index) => {
             model.visible = index === player.weaponIndex && !(aiming && currentWeapon().scoped);
-            model.scale.setScalar(index === player.weaponIndex ? inspectScale : 1);
+            const firearmScale = currentWeapon().melee ? 1 : 1.12 * viewModelScale;
+            model.scale.setScalar(index === player.weaponIndex ? firearmScale * inspectScale : 1);
           });
         }
         renderer.render(scene, camera);
