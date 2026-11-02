@@ -71,6 +71,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       const aimRaycaster = new THREE.Raycaster();
       const cameraRaycaster = new THREE.Raycaster();
       const transientEffects = [];
+      const pendingTimeouts = new Set();
       let grenadeAim = false;
       let grenadeArc = null;
       const overlay = document.querySelector("#overlay");
@@ -202,6 +203,14 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       function cachedBoxGeometry(width, height, depth) {
         const key = `${width}:${height}:${depth}`;
         if (!staticGeometries.has(key)) staticGeometries.set(key, ensureGeometryBounds(new THREE.BoxGeometry(width, height, depth)));
+        return staticGeometries.get(key);
+      }
+
+      function cachedCylinderGeometry(topRadius, bottomRadius, height, segments) {
+        const key = `cylinder:${topRadius}:${bottomRadius}:${height}:${segments}`;
+        if (!staticGeometries.has(key)) {
+          staticGeometries.set(key, ensureGeometryBounds(new THREE.CylinderGeometry(topRadius, bottomRadius, height, segments)));
+        }
         return staticGeometries.get(key);
       }
 
@@ -528,7 +537,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       let nextEnemyId = 0, killStreak = 0;
       let resultSubmitted = false;
       const replayGhosts = new Map();
-      let running = false, gameOver = false, pointerLockUnavailable = false, wave = 0, lastTime = 0;
+      let running = false, locallyPaused = false, gameOver = false, pointerLockUnavailable = false, wave = 0, lastTime = 0;
       let fireCooldown = 0, reloadTimer = 0, hurtFlash = 0, muzzleFlash = 0;
       let hitMarkerTimeout = 0, hitConfirmationTimeout = 0;
       let reloadDuration = 0;
@@ -639,6 +648,87 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         showMenu(mainMenu);
       }
 
+      function disconnectPeer() {
+        const connection = networkConnection;
+        networkConnection = null;
+        if (connection?.open) connection.close();
+        if (networkPeer) {
+          networkPeer.destroy();
+          networkPeer = null;
+        }
+        if (networkStateTimer) clearInterval(networkStateTimer);
+        networkStateTimer = 0;
+        networkRole = "";
+        roomCode = "";
+        roomConfiguration = null;
+        removeRemoteModel();
+        networkManager.reset();
+        updateRoomConfigurationControls();
+      }
+
+      function teardownMatch(disconnect = false) {
+        running = false;
+        locallyPaused = false;
+        gameOver = false;
+        firing = false;
+        aiming = false;
+        grenadeAim = false;
+        keys.clear();
+        resetTouchControls();
+        if (networkStateTimer) clearInterval(networkStateTimer);
+        networkStateTimer = 0;
+        clearScheduledTimeouts();
+        transientEffects.forEach(effect => {
+          scene.remove(effect.object);
+        });
+        transientEffects.length = 0;
+        if (grenadeArc) {
+          scene.remove(grenadeArc);
+          grenadeArc.geometry.dispose();
+          grenadeArc.material.dispose();
+          grenadeArc = null;
+        }
+        explosions.length = 0;
+        enemies.length = 0;
+        for (const model of enemyModels.values()) scene.remove(model);
+        enemyModels.clear();
+        for (const ghost of replayGhosts.values()) {
+          scene.remove(ghost);
+          ghost.traverse(object => object.geometry?.dispose());
+        }
+        replayGhosts.clear();
+        replayBuffer.reset();
+        replayPlayback = false;
+        document.querySelector("#replay-indicator").hidden = true;
+        document.querySelector(".stage").classList.remove("is-replaying");
+        vfxSystem.clearTransient();
+        if (disconnect) disconnectPeer();
+        player.reset(getPlayerSpawnPosition(""));
+        player.spawnInvulnerability = 0;
+        weaponManager.resetAmmo();
+        weaponManager.select(0);
+        player.weaponIndex = 0;
+        player.score = 0;
+        wave = 0;
+        killStreak = 0;
+        updateWeaponHud();
+        document.querySelector("#health").textContent = "100";
+        document.querySelector("#health-fill").style.width = "100%";
+        document.querySelector("#score").textContent = "0000";
+        grenades = 2;
+        flashbangs = 1;
+        document.querySelector("#grenade-count").textContent = grenades;
+        document.querySelector("#flash-count").textContent = flashbangs;
+        document.querySelector("#spawn-shield-overlay").classList.remove("active");
+        document.querySelector("#damage-overlay").classList.remove("visible", "flashbang");
+        document.querySelector("#hit-marker").classList.remove("visible");
+        document.querySelector("#hit-confirmation").classList.remove("visible");
+        document.querySelector("#weapon-toast").classList.remove("visible");
+        document.querySelector("#pause-button").textContent = "Pause";
+        document.querySelector("#pause-button").disabled = true;
+        audioManager.setCombatIntensity(0);
+      }
+
       if (operatorName) {
         profileScreen.hidden = true;
         mainMenu.hidden = false;
@@ -647,9 +737,14 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function showMenu(screen) {
         profileReturnScreen = screen === profileModal ? menuScreens.find(menu => menu !== profileModal && !menu.hidden) || mainMenu : screen;
+        if ((running || gameOver) && screen !== settingsScreen) teardownMatch(true);
         menuScreens.forEach(menu => { menu.hidden = menu !== screen; });
         overlay.hidden = true;
-        running = false;
+        const keepMultiplayerSimulation = screen === settingsScreen && networkConnection?.open && running;
+        if (!keepMultiplayerSimulation) {
+          running = false;
+          locallyPaused = false;
+        }
         firing = false;
         aiming = false;
         keys.clear();
@@ -662,6 +757,26 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         audioManager.unlock();
       }
 
+      function scheduleTimeout(callback, delay) {
+        let timer = 0;
+        timer = window.setTimeout(() => {
+          pendingTimeouts.delete(timer);
+          callback();
+        }, delay);
+        pendingTimeouts.add(timer);
+        return timer;
+      }
+
+      function clearScheduledTimeouts() {
+        for (const timer of pendingTimeouts) window.clearTimeout(timer);
+        pendingTimeouts.clear();
+      }
+
+      function cancelScheduledTimeout(timer) {
+        window.clearTimeout(timer);
+        pendingTimeouts.delete(timer);
+      }
+
       function playSound(type, position = new THREE.Vector3(player.x, 1, -player.y), options = {}) {
         audioManager.play(type, position, options);
       }
@@ -669,8 +784,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       function setCombatMessage(message, duration = 1400) {
         const element = document.querySelector("#combat-message");
         element.textContent = message;
-        clearTimeout(roomMessageTimeout);
-        roomMessageTimeout = setTimeout(() => { element.textContent = ""; }, duration);
+        cancelScheduledTimeout(roomMessageTimeout);
+        roomMessageTimeout = scheduleTimeout(() => { element.textContent = ""; }, duration);
       }
 
       function showHitConfirmation(label, noScope = false) {
@@ -680,16 +795,16 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         confirmation.classList.remove("visible");
         void confirmation.offsetWidth;
         confirmation.classList.add("visible");
-        clearTimeout(hitConfirmationTimeout);
-        hitConfirmationTimeout = setTimeout(() => confirmation.classList.remove("visible"), 1000);
+        cancelScheduledTimeout(hitConfirmationTimeout);
+        hitConfirmationTimeout = scheduleTimeout(() => confirmation.classList.remove("visible"), 1000);
       }
 
       function showHitMarker() {
         hitMarker.classList.remove("visible");
         void hitMarker.offsetWidth;
         hitMarker.classList.add("visible");
-        clearTimeout(hitMarkerTimeout);
-        hitMarkerTimeout = setTimeout(() => hitMarker.classList.remove("visible"), 1000);
+        cancelScheduledTimeout(hitMarkerTimeout);
+        hitMarkerTimeout = scheduleTimeout(() => hitMarker.classList.remove("visible"), 1000);
       }
 
       function awardKillstreak() {
@@ -866,6 +981,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             z: -Math.sin(player.angle) * horizontalLook
           },
           health: player.health,
+          spawnShielded: player.spawnInvulnerability > 0,
           weapon: player.weaponIndex,
           mapId: activeMapId,
           firing
@@ -873,14 +989,18 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       }
 
       function removeRemoteModel() {
-        if (remoteModel) scene.remove(remoteModel);
+        if (remoteModel) {
+          scene.remove(remoteModel);
+          for (const resource of remoteModel.userData.disposableResources || []) resource.dispose();
+        }
         remoteModel = null;
         remotePlayer = null;
         networkManager.reset();
       }
 
       function applyRemoteShot(angle, pitch, weaponIndex) {
-        if (!running || gameOver || gameMode === "coop" || player.health <= 0 || !remotePlayer) return;
+        if (!running || gameOver || player.spawnInvulnerability > 0 || gameMode === "coop" ||
+          player.health <= 0 || !remotePlayer) return;
         const weapon = weapons[weaponIndex];
         const dx = player.x - remotePlayer.x;
         const dy = player.y - remotePlayer.y;
@@ -896,7 +1016,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         fill.style.width = `${player.health}%`;
         fill.style.background = player.health < 35 ? "#dd6d58" : "#c1e16d";
         document.querySelector("#damage-overlay").classList.add("visible");
-        window.setTimeout(() => document.querySelector("#damage-overlay").classList.remove("visible"), 300);
+        scheduleTimeout(() => document.querySelector("#damage-overlay").classList.remove("visible"), 300);
         setCombatMessage(`HIT BY ${weapon.short}`);
         sendPlayerState();
         if (player.health === 0) {
@@ -935,6 +1055,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           Number.isFinite(data.cameraDirection.z) &&
           typeof data.mapId === "string" && mapDefinitions[data.mapId] &&
           Number.isFinite(data.pitch) && typeof data.firing === "boolean" &&
+          (data.spawnShielded === undefined || typeof data.spawnShielded === "boolean") &&
           data.health >= 0 && data.health <= 100 && data.weapon >= 0 && data.weapon < weapons.length) {
           if (networkRole === "host" && data.mapId !== activeMapId) {
             sendPlayerState();
@@ -981,16 +1102,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
               Math.sin(data.pitch),
               -Math.sin(data.angle) * Math.cos(data.pitch)
             );
-            const geometry = new THREE.BufferGeometry().setFromPoints([origin, origin.clone().addScaledVector(direction, 5)]);
-            const material = new THREE.LineBasicMaterial({ color: "#f4d57a", transparent: true, opacity: .8 });
-            const tracer = new THREE.Line(geometry, material);
-            tracer.frustumCulled = true;
-            scene.add(tracer);
-            window.setTimeout(() => {
-              scene.remove(tracer);
-              geometry.dispose();
-              material.dispose();
-            }, 100);
+            addTracer(origin, origin.clone().addScaledVector(direction, 5), "#f4d57a");
           }
           applyRemoteShot(data.angle, data.pitch, data.weapon);
         }
@@ -1021,6 +1133,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         });
         connection.on("data", handlePeerData);
         connection.on("close", () => {
+          if (networkConnection !== connection) return;
           networkConnection = null;
           networkManager.reset();
           if (networkStateTimer) clearInterval(networkStateTimer);
@@ -1029,10 +1142,6 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           setRoomMessage("The peer connection closed.");
           updateRoomPanel("The peer connection closed.");
           updateRoomConfigurationControls();
-          if (running) {
-            wave = 0;
-            pauseGame();
-          }
         });
         connection.on("error", error => {
           console.error("Peer connection error.", error);
@@ -1045,11 +1154,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           setRoomMessage("PeerJS failed to load. Check your internet connection and reload.", true);
           return;
         }
-        if (networkConnection) {
-          networkConnection.close();
-          networkConnection = null;
-        }
-        if (networkPeer) networkPeer.destroy();
+        disconnectPeer();
         roomConfiguration = null;
         networkRole = "host";
         roomCode = makeRoomCode();
@@ -1088,11 +1193,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           setRoomMessage("Enter a valid 8-character room code starting with bs-.", true);
           return;
         }
-        if (networkConnection) {
-          networkConnection.close();
-          networkConnection = null;
-        }
-        if (networkPeer) networkPeer.destroy();
+        disconnectPeer();
         roomConfiguration = null;
         roomCode = code;
         networkRole = "guest";
@@ -1115,27 +1216,14 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       }
 
       function joinSelectedRoom() {
-        if (networkConnection) {
-          networkConnection.close();
-          networkConnection = null;
-        }
-        if (networkPeer) {
-          networkPeer.destroy();
-          networkPeer = null;
-        }
-        if (networkStateTimer) clearInterval(networkStateTimer);
-        networkStateTimer = 0;
-        networkRole = "";
-        roomCode = "";
-        roomConfiguration = null;
-        removeRemoteModel();
-        if (running) pauseGame();
+        if (running || gameOver) teardownMatch(true);
+        else disconnectPeer();
         updateRoomPanel();
         setRoomMessage("Disconnected from the peer room.");
       }
 
       function addGrenade(flash = false) {
-        if (!running) return;
+        if (!running || locallyPaused) return;
         if (flash ? flashbangs <= 0 : grenades <= 0) {
           setCombatMessage(flash ? "NO FLASHBANGS" : "NO FRAG GRENADES", 700);
           return;
@@ -1166,8 +1254,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const projectile = new THREE.Group();
         const bodyMaterial = cachedMaterial("grenade-body", flash ? "#a99e78" : "#59634d", { roughness: .7, metalness: .18 });
         const bandMaterial = cachedMaterial("grenade-band", flash ? "#e4d8ad" : "#252b25", { roughness: .5, metalness: .55 });
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(.095, .105, .2, 12), bodyMaterial);
-        const cap = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, .045, 10), bandMaterial);
+        const body = new THREE.Mesh(cachedCylinderGeometry(.095, .105, .2, 12), bodyMaterial);
+        const cap = new THREE.Mesh(cachedCylinderGeometry(.045, .045, .045, 10), bandMaterial);
         const lever = new THREE.Mesh(cachedBoxGeometry(.16, .018, .035), bandMaterial);
         const travelTime = 340;
         body.castShadow = cap.castShadow = lever.castShadow = true;
@@ -1178,7 +1266,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         scene.add(projectile);
         const projectileFlight = { model: projectile, age: 0, duration: travelTime / 1000, startX: player.x, startY: player.y, impactX, impactY };
         transientEffects.push({ object: projectile, age: 0, duration: travelTime / 1000, type: "ordnance", flight: projectileFlight });
-        setTimeout(() => {
+        scheduleTimeout(() => {
           if (!flash) {
             playSound("grenade", new THREE.Vector3(impactX, .15, -impactY), { refDistance: 4, rolloffFactor: .9 });
             grenadeFlash = .2;
@@ -1211,7 +1299,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             const playerLineOfSight = castRayFrom(player.x, player.y, Math.atan2(towardBlastY, towardBlastX)).distance;
             if (playerDistance <= 8 && playerFacingDot > 0 && playerLineOfSight >= playerDistance - .25) {
               document.querySelector("#damage-overlay").classList.add("flashbang");
-              setTimeout(() => document.querySelector("#damage-overlay").classList.remove("flashbang"), 950);
+              scheduleTimeout(() => document.querySelector("#damage-overlay").classList.remove("flashbang"), 950);
             }
             setCombatMessage("FLASHBANG OUT");
           }
@@ -1252,17 +1340,44 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function getPlayerSpawnPosition(role = networkRole) {
         const definition = mapDefinitions[activeMapId];
-        const defaultSpawn = definition.spawn;
+        const grid = mapDefinitions[activeMapId].grid;
+        const positions = [];
+        const positionKeys = new Set();
+        const addCandidate = position => {
+          if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
+          const worldPosition = new THREE.Vector3(position.x, 0, -position.y);
+          if (!Number.isFinite(worldPosition.x) || !Number.isFinite(worldPosition.y) ||
+            !Number.isFinite(worldPosition.z) || !canOccupyOnMap(grid, worldPosition.x, -worldPosition.z, .24)) return;
+          const key = `${worldPosition.x}:${worldPosition.z}`;
+          if (!positionKeys.has(key)) {
+            positionKeys.add(key);
+            positions.push({ x: worldPosition.x, y: -worldPosition.z });
+          }
+        };
+        addCandidate(definition.spawn);
+        for (const point of definition.enemySpawns || []) addCandidate({ x: point.x, y: -point.z });
+        for (let row = 1; row < grid.length - 1; row++) {
+          for (let column = 1; column < grid[row].length - 1; column++) {
+            addCandidate({ x: column + .5, y: row + .5 });
+          }
+        }
+        if (!positions.length) throw new Error(`Map "${activeMapId}" has no valid player spawn positions.`);
+        const defaultSpawn = positions.find(position =>
+          position.x === definition.spawn.x && position.y === definition.spawn.y
+        ) || positions[0];
         if (role !== "guest" || !networkConnection?.open) return { ...defaultSpawn };
-        const guestSpawns = (definition.enemySpawns || [])
-          .map(point => ({ x: point.x, y: -point.z }))
-          .filter(position => canOccupyOnMap(map, position.x, position.y, .24));
-        const visibleSpawns = guestSpawns.filter(position => botAI.hasLineOfSight(map, defaultSpawn, position));
-        return (visibleSpawns.length ? visibleSpawns : guestSpawns).reduce((farthest, position) =>
-          Math.hypot(position.x - defaultSpawn.x, position.y - defaultSpawn.y) >
-          Math.hypot(farthest.x - defaultSpawn.x, farthest.y - defaultSpawn.y)
-            ? position
-            : farthest, { ...defaultSpawn });
+        const opponentSpawn = networkRole === "guest" && remotePlayer
+          ? { x: remotePlayer.x, y: remotePlayer.y }
+          : definition.spawn;
+        const available = positions.filter(position =>
+          Math.hypot(position.x - opponentSpawn.x, position.y - opponentSpawn.y) >= 4 &&
+          !botAI.hasLineOfSight(grid, opponentSpawn, position)
+        );
+        const candidates = available.length ? available : positions;
+        return candidates.reduce((farthest, position) =>
+          Math.hypot(position.x - opponentSpawn.x, position.y - opponentSpawn.y) >
+          Math.hypot(farthest.x - opponentSpawn.x, farthest.y - opponentSpawn.y) ? position : farthest,
+        defaultSpawn);
       }
 
       function updateAimHud() {
@@ -1299,8 +1414,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const toast = document.querySelector("#weapon-toast");
         toast.textContent = currentWeapon().name;
         toast.classList.add("visible");
-        clearTimeout(toastTimeout);
-        toastTimeout = setTimeout(() => toast.classList.remove("visible"), 900);
+        cancelScheduledTimeout(toastTimeout);
+        toastTimeout = scheduleTimeout(() => toast.classList.remove("visible"), 900);
       }
 
       function resize() {
@@ -1640,6 +1755,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       function createRemoteModel() {
         if (remoteModel) return remoteModel;
         remoteModel = new THREE.Group();
+        remoteModel.userData.disposableResources = [];
         const uniform = cachedMaterial("remote-uniform", "#425d72", { roughness: .82 });
         const armor = cachedMaterial("remote-armor", "#1f2b34", { metalness: .18 });
         const marker = cachedMaterial("remote-marker", "#74d8ef", { emissive: "#338ba0", emissiveIntensity: .65 });
@@ -1660,7 +1776,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const createRemoteLimb = (x, y, length, radius, material) => {
           const pivot = new THREE.Group();
           pivot.position.set(x, y, 0);
-          const segment = new THREE.Mesh(new THREE.CylinderGeometry(radius * .8, radius, length, 10), material);
+          const geometry = new THREE.CylinderGeometry(radius * .8, radius, length, 10);
+          remoteModel.userData.disposableResources.push(geometry);
+          const segment = new THREE.Mesh(geometry, material);
           segment.position.y = -length / 2;
           segment.castShadow = true;
           pivot.add(segment);
@@ -1676,7 +1794,21 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const muzzle = new THREE.PointLight("#ffb65c", 0, 2.5, 2);
         muzzle.position.set(.3, 1.12, -.62);
         remoteModel.add(muzzle);
+        const shieldGeometry = new THREE.SphereGeometry(.72, 16, 12);
+        const shieldMaterial = new THREE.MeshBasicMaterial({
+          color: "#77dfff",
+          transparent: true,
+          opacity: .16,
+          side: THREE.DoubleSide,
+          depthWrite: false
+        });
+        remoteModel.userData.disposableResources.push(shieldGeometry, shieldMaterial);
+        const shield = new THREE.Mesh(shieldGeometry, shieldMaterial);
+        shield.position.y = .95;
+        shield.visible = false;
+        remoteModel.add(shield);
         remoteModel.userData.muzzleLight = muzzle;
+        remoteModel.userData.spawnShield = shield;
         remoteModel.userData.leftLeg = leftLeg;
         remoteModel.userData.rightLeg = rightLeg;
         remoteModel.userData.leftArm = leftArm;
@@ -1708,30 +1840,45 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         model.position.set(remotePlayer.x, 0, -remotePlayer.y);
         model.rotation.y = remotePlayer.angle - Math.PI / 2;
         model.userData.muzzleLight.intensity = remotePlayer.firing ? .75 : 0;
+        model.userData.spawnShield.visible = Boolean(remotePlayer.spawnShielded);
         model.visible = remotePlayer.health > 0;
       }
 
       function getEnemySpawnPosition() {
         const definition = mapDefinitions[activeMapId];
-        const isSafe = position => canOccupyOnMap(map, position.x, position.y, .24);
+        const isSafe = position => Number.isFinite(position.x) && Number.isFinite(position.y) &&
+          canOccupyOnMap(map, position.x, position.y, .24);
         const authoredSpawns = (definition.enemySpawns || [])
-          .map(point => ({ x: point.x, y: -point.z }))
-          .filter(isSafe);
+          .map(point => new THREE.Vector3(point.x, 0, point.z))
+          .filter(position => isSafe({ x: position.x, y: -position.z }))
+          .map(position => ({ x: position.x, y: -position.z }));
         const openTiles = [];
         for (let row = 1; row < map.length - 1; row++) {
           for (let column = 1; column < map[row].length - 1; column++) {
-            const position = { x: column + .5, y: row + .5 };
+            const worldPosition = new THREE.Vector3(column + .5, 0, -(row + .5));
+            const position = { x: worldPosition.x, y: -worldPosition.z };
             if (isSafe(position)) openTiles.push(position);
           }
         }
         const safeFromPlayer = positions => positions.filter(position =>
-          Math.hypot(position.x - player.x, position.y - player.y) >= 4
+          Math.hypot(position.x - player.x, position.y - player.y) >= 4 &&
+          !botAI.hasLineOfSight(map, player, position)
         );
         const preferred = safeFromPlayer(authoredSpawns);
         const fallback = safeFromPlayer(openTiles);
         const candidates = preferred.length ? preferred : fallback.length ? fallback : authoredSpawns.length ? authoredSpawns : openTiles;
         if (!candidates.length) throw new Error(`Map "${activeMapId}" has no valid enemy spawn tiles.`);
-        return candidates[Math.floor(Math.random() * candidates.length)];
+        let farthestDistance = 0;
+        for (const position of candidates) {
+          farthestDistance = Math.max(farthestDistance, Math.hypot(
+            position.x - player.x,
+            position.y - player.y
+          ));
+        }
+        const safest = candidates.filter(position =>
+          Math.hypot(position.x - player.x, position.y - player.y) >= Math.max(4, farthestDistance - 2)
+        );
+        return safest[Math.floor(Math.random() * safest.length)];
       }
 
       function eliminateEnemy(enemy, { weaponIndex = player.weaponIndex, headshot = false, noScope = false } = {}) {
@@ -1848,10 +1995,6 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           }
           if (effect.age < effect.duration) continue;
           scene.remove(effect.object);
-          effect.object.traverse?.(object => object.geometry?.dispose());
-          effect.object.geometry?.dispose();
-          if (Array.isArray(effect.object.material)) effect.object.material.forEach(material => material.dispose());
-          else effect.object.material?.dispose();
           transientEffects.splice(index, 1);
         }
       }
@@ -2012,7 +2155,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function reload() {
         const weapon = currentWeapon();
-        if (!running || weapon.melee || reloadTimer > 0 || weapon.ammo === weapon.magazine || weapon.reserve <= 0) return;
+        if (!running || locallyPaused || weapon.melee || reloadTimer > 0 || weapon.ammo === weapon.magazine || weapon.reserve <= 0) return;
         reloadTimer = weapon.reloadTime;
         reloadDuration = weapon.reloadTime;
         reloadKind = "reload";
@@ -2021,7 +2164,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       }
 
       function shoot() {
-        if (!running || fireCooldown > 0 || reloadTimer > 0) return;
+        if (!running || locallyPaused || fireCooldown > 0 || reloadTimer > 0) return;
         const weapon = currentWeapon();
         if (!weapon.melee && weapon.ammo <= 0) { reload(); return; }
         ensureAudio();
@@ -2155,7 +2298,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       function startDash() {
         const { forward, strafe } = movementInput();
         const length = Math.hypot(forward, strafe);
-        if (!running || aiming || dashTimer > 0 || dashCooldown > 0 || length === 0) return;
+        if (!running || locallyPaused || aiming || dashTimer > 0 || dashCooldown > 0 || length === 0) return;
         dashDirectionX = (Math.cos(player.angle) * forward + Math.cos(player.angle - Math.PI / 2) * strafe) / length;
         dashDirectionY = (Math.sin(player.angle) * forward + Math.sin(player.angle - Math.PI / 2) * strafe) / length;
         dashTimer = dashDuration;
@@ -2165,12 +2308,17 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function update(dt) {
         updateTransientEffects(dt);
+        player.spawnInvulnerability = Math.max(0, player.spawnInvulnerability - dt);
+        document.querySelector("#spawn-shield-overlay").classList.toggle("active", player.spawnInvulnerability > 0);
         const recoilReturn = 1 - Math.exp(-dt * 12);
         playerPitch = Math.max(-1.35, Math.min(1.35, playerPitch - recoilPitch * recoilReturn));
         player.angle -= recoilYaw * recoilReturn;
         recoilPitch *= 1 - recoilReturn;
         recoilYaw *= 1 - recoilReturn;
-        const nearbyThreats = enemies.filter(enemy => Math.hypot(enemy.x - player.x, enemy.y - player.y) < 12).length;
+        let nearbyThreats = 0;
+        for (const enemy of enemies) {
+          if (Math.hypot(enemy.x - player.x, enemy.y - player.y) < 12) nearbyThreats++;
+        }
         audioManager.setCombatIntensity(Math.min(1, nearbyThreats / 4));
         fireCooldown = Math.max(0, fireCooldown - dt);
         muzzleFlash = Math.max(0, muzzleFlash - dt);
@@ -2185,10 +2333,11 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         flashbangCooldown = Math.max(0, flashbangCooldown - dt);
         grenadeAnimation = Math.max(0, grenadeAnimation - dt * 1.4);
         flashbangAnimation = Math.max(0, flashbangAnimation - dt * 1.4);
-        explosions = explosions.filter(explosion => {
+        for (let index = explosions.length - 1; index >= 0; index--) {
+          const explosion = explosions[index];
           explosion.age += dt;
-          return explosion.age < explosion.duration;
-        });
+          if (explosion.age >= explosion.duration) explosions.splice(index, 1);
+        }
         if (firing && currentWeapon().auto) shoot();
         if (reloadTimer > 0) {
           reloadTimer -= dt;
@@ -2266,6 +2415,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           const closeAttack = distance <= 1.15;
           if (!closeAttack && Math.random() >= .58) continue;
           const damage = closeAttack ? 6 : Math.max(3, weapon.damage * (enemy.weaponIndex === 1 ? .075 : .045));
+          if (player.spawnInvulnerability > 0) continue;
           player.applyDamage(Math.round(damage));
           hurtFlash = .8;
           damageMessageTimer = .3;
@@ -2278,7 +2428,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             addTracer(muzzle, playerChest, "#ff9b72");
           }
           document.querySelector("#damage-overlay").classList.add("visible");
-          setTimeout(() => document.querySelector("#damage-overlay").classList.remove("visible"), 300);
+          scheduleTimeout(() => document.querySelector("#damage-overlay").classList.remove("visible"), 300);
           document.querySelector("#health").textContent = player.health;
           const fill = document.querySelector("#health-fill");
           fill.style.width = `${player.health}%`;
@@ -2330,6 +2480,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function startGame(requestedMode = gameMode, fresh = gameOver, { acquirePointerLock = true } = {}) {
         if (fresh || gameOver) {
+          teardownMatch(false);
+          if (requestedMode === "waves" && (networkConnection || networkPeer)) disconnectPeer();
           gameMode = requestedMode;
           if (activeMapId !== selectedMapId) loadMap(selectedMapId);
           const spawn = getPlayerSpawnPosition();
@@ -2367,12 +2519,15 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           document.querySelector("#flash-count").textContent = flashbangs;
           document.querySelector("#health").textContent = "100";
           document.querySelector("#health-fill").style.width = "100%";
+          document.querySelector("#health-fill").style.background = "#c1e16d";
+          document.querySelector("#wave").textContent = "WAVE 01";
           document.querySelector("#score").textContent = "0000";
           updateWeaponHud();
         }
         ensureAudio();
         firing = false;
         aiming = false;
+        locallyPaused = false;
         running = true;
         menuScreens.forEach(menu => { menu.hidden = true; });
         overlay.hidden = true;
@@ -2392,6 +2547,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         document.querySelector("#pause-settings-button").hidden = true;
         returnMenuButton.hidden = true;
         if (wave === 0) spawnWave();
+        if (networkConnection?.open && !networkStateTimer) {
+          networkStateTimer = window.setInterval(sendPlayerState, 50);
+        }
         if (!acquirePointerLock) {
           pointerLockUnavailable = true;
         } else if (!window.matchMedia("(any-pointer: coarse)").matches) {
@@ -2403,9 +2561,11 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       }
 
       function pauseGame() {
-        if (!running || gameOver) return;
-        running = false;
-        audioManager.setCombatIntensity(0);
+        if (!running || locallyPaused || gameOver) return;
+        const multiplayerPause = Boolean(networkConnection?.open);
+        if (multiplayerPause) locallyPaused = true;
+        else running = false;
+        if (!multiplayerPause) audioManager.setCombatIntensity(0);
         firing = false;
         aiming = false;
         grenadeAim = false;
@@ -2415,9 +2575,11 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         overlay.hidden = false;
         updateAimHud();
         document.querySelector("#pause-settings-button").hidden = false;
-        document.querySelector("#overlay-kicker").textContent = "SIMULATION PAUSED";
+        document.querySelector("#overlay-kicker").textContent = multiplayerPause ? "LOCAL CONTROLS PAUSED" : "SIMULATION PAUSED";
         document.querySelector("#overlay-title").innerHTML = "REGROUP<br>AND REDEPLOY";
-        document.querySelector("#overlay-copy").textContent = "The perimeter is waiting. Resume when you are ready.";
+        document.querySelector("#overlay-copy").textContent = multiplayerPause
+          ? "Your local controls are paused. The peer match continues while this overlay is open."
+          : "The perimeter is waiting. Resume when you are ready.";
         startButton.textContent = "Resume";
         returnMenuButton.hidden = false;
         document.querySelector("#pause-button").textContent = "Resume";
@@ -2427,7 +2589,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function endGame({ won = false, replay = false } = {}) {
         if (gameOver) return;
-        running = false; gameOver = true;
+        running = false; locallyPaused = false; gameOver = true;
         audioManager.setCombatIntensity(0);
         firing = false;
         aiming = false;
@@ -2461,7 +2623,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         document.querySelector("#pause-button").disabled = true;
         if (replay && replayBuffer.frames.length >= 2) {
           leaderboardReady.then(() => {
-            window.setTimeout(() => {
+            scheduleTimeout(() => {
               if (gameOver && !replayPlayback) playMatchReplay();
             }, 800);
           });
@@ -2548,13 +2710,19 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       document.querySelector("#close-profile-modal").addEventListener("click", () => showMenu(profileReturnScreen));
       document.querySelector("#profile-card-close").addEventListener("click", () => showMenu(profileReturnScreen));
       returnMenuButton.addEventListener("click", () => {
-        gameOver = false;
-        document.querySelector("#pause-button").textContent = "Pause";
+        teardownMatch(true);
         showMenu(mainMenu);
+      });
+      document.querySelector("#quit-button").addEventListener("click", event => {
+        teardownMatch(true);
+        showMenu(mainMenu);
+        window.close();
+        event.currentTarget.textContent = "Session reset - close this tab to quit";
       });
       startButton.addEventListener("click", () => startGame(gameMode, gameOver));
       document.querySelector("#pause-button").addEventListener("click", () => {
-        if (running) pauseGame();
+        if (running && locallyPaused) startGame(gameMode, false);
+        else if (running) pauseGame();
         else if (!gameOver && overlay.hidden === false) startGame(gameMode, false);
       });
       document.querySelector("#fullscreen-button").addEventListener("click", toggleFullscreen);
@@ -2578,7 +2746,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       });
       window.addEventListener("resize", resize);
       window.addEventListener("keydown", event => {
-        keys.add(event.code);
+        if (running && !locallyPaused) keys.add(event.code);
         if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) event.preventDefault();
         if (event.code === "Escape" && event.repeat) return;
         if (event.altKey && event.code === "Enter") {
@@ -2588,6 +2756,10 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         }
         if (event.code === "Escape") {
           event.preventDefault();
+          if (locallyPaused) {
+            startGame(gameMode, false);
+            return;
+          }
           const now = performance.now();
           if (lastEscapePress > 0 && now - lastEscapePress <= 2000) {
             lastEscapePress = 0;
@@ -2607,7 +2779,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           else if (!gameOver && !overlay.hidden) startGame(gameMode, false);
           return;
         }
-        if (!running || event.repeat) return;
+        if (!running || locallyPaused || event.repeat) return;
         if (event.code === "KeyR") reload();
         if (event.code === "KeyG") {
           grenadeAim = true;
@@ -2630,7 +2802,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       const touchStick = document.querySelector("#touch-stick");
       const touchStickKnob = document.querySelector("#touch-stick-knob");
       touchStick.addEventListener("pointerdown", event => {
-        if (!running) return;
+        if (!running || locallyPaused) return;
         event.preventDefault();
         touchStickPointerId = event.pointerId;
         touchStick.setPointerCapture(event.pointerId);
@@ -2663,7 +2835,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function bindTouchHold(button, onStart, onEnd) {
         button.addEventListener("pointerdown", event => {
-          if (!running) return;
+            if (!running || locallyPaused) return;
           event.preventDefault();
           button.setPointerCapture(event.pointerId);
           button.classList.add("active");
@@ -2690,32 +2862,32 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       });
       bindTouchHold(document.querySelector("#touch-sprint"), () => keys.add("ShiftLeft"), () => keys.delete("ShiftLeft"));
       document.querySelector("#touch-dash").addEventListener("pointerdown", event => {
-        if (!running) return;
+        if (!running || locallyPaused) return;
         event.preventDefault();
         startDash();
       });
       document.querySelector("#touch-reload").addEventListener("pointerdown", event => {
-        if (!running) return;
+        if (!running || locallyPaused) return;
         event.preventDefault();
         reload();
       });
       document.querySelector("#touch-swap").addEventListener("pointerdown", event => {
-        if (!running) return;
+        if (!running || locallyPaused) return;
         event.preventDefault();
         selectWeapon((player.weaponIndex + 1) % weapons.length);
       });
       document.querySelector("#touch-frag").addEventListener("pointerdown", event => {
-        if (!running) return;
+        if (!running || locallyPaused) return;
         event.preventDefault();
         addGrenade(false);
       });
       document.querySelector("#touch-flash").addEventListener("pointerdown", event => {
-        if (!running) return;
+        if (!running || locallyPaused) return;
         event.preventDefault();
         addGrenade(true);
       });
       canvas.addEventListener("pointerdown", event => {
-        if (!running || event.pointerType === "mouse") return;
+        if (!running || locallyPaused || event.pointerType === "mouse") return;
         event.preventDefault();
         lookPointerId = event.pointerId;
         lastLookX = event.clientX;
@@ -2739,7 +2911,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       canvas.addEventListener("pointerup", releaseLook);
       canvas.addEventListener("pointercancel", releaseLook);
       canvas.addEventListener("mousedown", event => {
-        if (!running) return;
+        if (!running || locallyPaused) return;
         if (event.button === 2) {
           event.preventDefault();
           aiming = true;
@@ -2760,7 +2932,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       });
       canvas.addEventListener("contextmenu", event => event.preventDefault());
       window.addEventListener("wheel", event => {
-        if (!running || event.deltaY === 0) return;
+        if (!running || locallyPaused || event.deltaY === 0) return;
         event.preventDefault();
         const direction = event.deltaY > 0 ? 1 : -1;
         selectWeapon((player.weaponIndex + direction + weapons.length) % weapons.length);
@@ -2774,7 +2946,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         resetTouchControls();
       });
       window.addEventListener("mousemove", event => {
-        if (running && (document.pointerLockElement === canvas || pointerLockUnavailable)) {
+        if (running && !locallyPaused && (document.pointerLockElement === canvas || pointerLockUnavailable)) {
           const sensitivity = .0025 * controlSettings.mouseSensitivity * lookSensitivityMultiplier();
           player.angle -= event.movementX * sensitivity;
           playerPitch = Math.max(-1.35, Math.min(1.35, playerPitch - event.movementY * sensitivity));

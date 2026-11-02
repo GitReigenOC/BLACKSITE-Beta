@@ -7,6 +7,7 @@ export class Player {
     this.weaponIndex = weaponIndex;
     this.score = score;
     this.killstreak = 0;
+    this.spawnInvulnerability = 0;
   }
 
   move(dx, dy, canOccupy, radius = .24) {
@@ -20,6 +21,7 @@ export class Player {
   }
 
   applyDamage(amount) {
+    if (this.spawnInvulnerability > 0) return this.health;
     this.health = Math.max(0, this.health - Math.max(0, amount));
     return this.health;
   }
@@ -32,9 +34,16 @@ export class Player {
     this.weaponIndex = 0;
     this.score = 0;
     this.killstreak = 0;
+    this.spawnInvulnerability = 3;
   }
 
   capture() {
-    return { x: this.x, y: this.y, angle: this.angle, health: this.health };
+    return {
+      x: this.x,
+      y: this.y,
+      angle: this.angle,
+      health: this.health,
+      spawnShielded: this.spawnInvulnerability > 0
+    };
   }
 }

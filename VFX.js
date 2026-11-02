@@ -5,7 +5,9 @@ export class VFXSystem {
     this.engine = engine;
     this.scene = scene;
     this.bullets = [];
+    this.bulletCursor = 0;
     this.tracers = [];
+    this.particleCursor = 0;
     this.particles = Array.from({ length: particleCapacity }, () => ({
       active: false,
       position: new engine.Vector3(),
@@ -25,6 +27,12 @@ export class VFXSystem {
     });
     this.dummy = new engine.Object3D();
     this.identityQuaternion = new engine.Quaternion();
+    this.bulletOrientation = new engine.Quaternion();
+    this.bulletForward = new engine.Vector3(0, 0, 1);
+    this.bulletDirection = new engine.Vector3();
+    this.bulletScale = new engine.Vector3(1, 1, 9);
+    this.hiddenBulletScale = new engine.Vector3(.001, .001, .001);
+    this.colorScratch = new engine.Color();
     this.hiddenPosition = new engine.Vector3(0, -1000, 0);
     this.zeroVelocity = new engine.Vector3();
     this.bulletGeometry = this.withBounds(new engine.SphereGeometry(.012, 6, 4));
@@ -38,7 +46,7 @@ export class VFXSystem {
     this.bulletPool.userData.capacity = bulletCapacity;
     this.scene.add(this.bulletPool);
     for (let index = 0; index < bulletCapacity; index++) {
-      this.setInstance(this.bulletPool, index, new engine.Vector3(0, -1000, 0), new engine.Quaternion(), .001);
+      this.setInstance(this.bulletPool, index, this.hiddenPosition, this.identityQuaternion, this.hiddenBulletScale);
       this.bullets.push({ active: false, position: new engine.Vector3(), velocity: new engine.Vector3(), remaining: 0 });
     }
 
@@ -72,12 +80,20 @@ export class VFXSystem {
     else this.dummy.scale.copy(scale);
     this.dummy.updateMatrix();
     mesh.setMatrixAt(index, this.dummy.matrix);
-    mesh.instanceMatrix.needsUpdate = true;
   }
 
   spawnBullet(origin, destination, { color = "#f5d992", speed = 180 } = {}) {
-    const bullet = this.bullets.find(item => !item.active);
-    if (!bullet) return false;
+    let index = -1;
+    for (let checked = 0; checked < this.bullets.length; checked++) {
+      const candidate = (this.bulletCursor + checked) % this.bullets.length;
+      if (!this.bullets[candidate].active) {
+        index = candidate;
+        break;
+      }
+    }
+    if (index < 0) return false;
+    const bullet = this.bullets[index];
+    this.bulletCursor = (index + 1) % this.bullets.length;
     bullet.position.copy(origin);
     bullet.velocity.copy(destination).sub(origin);
     const distance = bullet.velocity.length();
@@ -86,14 +102,12 @@ export class VFXSystem {
     bullet.remaining = distance / speed;
     bullet.active = true;
     bullet.color = color;
-    const index = this.bullets.indexOf(bullet);
-    this.bulletPool.setColorAt(index, new this.engine.Color(color));
-    const orientation = new this.engine.Quaternion().setFromUnitVectors(
-      new this.engine.Vector3(0, 0, 1),
-      bullet.velocity.clone().normalize()
-    );
-    this.setInstance(this.bulletPool, index, bullet.position, orientation, new this.engine.Vector3(1, 1, 9));
+    this.bulletPool.setColorAt(index, this.colorScratch.set(color));
+    this.bulletDirection.copy(bullet.velocity).normalize();
+    this.bulletOrientation.setFromUnitVectors(this.bulletForward, this.bulletDirection);
+    this.setInstance(this.bulletPool, index, bullet.position, this.bulletOrientation, this.bulletScale);
     this.bulletPool.instanceColor.needsUpdate = true;
+    this.bulletPool.instanceMatrix.needsUpdate = true;
     return true;
   }
 
@@ -127,9 +141,16 @@ export class VFXSystem {
     color = "#d8c184",
     expanding = false
   } = {}) {
-    const particle = this.particles.find(item => !item.active) ||
-      this.particles.reduce((oldest, item) => item.remaining < oldest.remaining ? item : oldest);
-    const index = this.particles.indexOf(particle);
+    let index = this.particleCursor;
+    for (let checked = 0; checked < this.particles.length; checked++) {
+      const candidate = (this.particleCursor + checked) % this.particles.length;
+      if (!this.particles[candidate].active) {
+        index = candidate;
+        break;
+      }
+    }
+    this.particleCursor = (index + 1) % this.particles.length;
+    const particle = this.particles[index];
     particle.active = true;
     particle.position.copy(position);
     particle.velocity.copy(velocity || this.zeroVelocity);
@@ -140,8 +161,9 @@ export class VFXSystem {
     particle.gravity = gravity;
     particle.expanding = expanding;
     this.setInstance(this.particlePool, index, particle.position, this.identityQuaternion, scale);
-    this.particlePool.setColorAt(index, new this.engine.Color(color));
+    this.particlePool.setColorAt(index, this.colorScratch.set(color));
     this.particlePool.instanceColor.needsUpdate = true;
+    this.particlePool.instanceMatrix.needsUpdate = true;
     return true;
   }
 
@@ -213,6 +235,7 @@ export class VFXSystem {
   }
 
   update(dt) {
+    let bulletsChanged = false;
     for (let index = 0; index < this.bullets.length; index++) {
       const bullet = this.bullets[index];
       if (!bullet.active) continue;
@@ -220,18 +243,18 @@ export class VFXSystem {
       bullet.position.addScaledVector(bullet.velocity, step);
       bullet.remaining -= step;
       if (bullet.remaining <= 0) bullet.active = false;
-      const orientation = new this.engine.Quaternion().setFromUnitVectors(
-        new this.engine.Vector3(0, 0, 1),
-        bullet.velocity.clone().normalize()
-      );
+      this.bulletDirection.copy(bullet.velocity).normalize();
+      this.bulletOrientation.setFromUnitVectors(this.bulletForward, this.bulletDirection);
       this.setInstance(
         this.bulletPool,
         index,
-        bullet.active ? bullet.position : new this.engine.Vector3(0, -1000, 0),
-        orientation,
-        bullet.active ? new this.engine.Vector3(1, 1, 9) : .001
+        bullet.active ? bullet.position : this.hiddenPosition,
+        this.bulletOrientation,
+        bullet.active ? this.bulletScale : this.hiddenBulletScale
       );
+      bulletsChanged = true;
     }
+    if (bulletsChanged) this.bulletPool.instanceMatrix.needsUpdate = true;
     for (let index = this.tracers.length - 1; index >= 0; index--) {
       const tracer = this.tracers[index];
       tracer.remaining -= dt;
@@ -292,7 +315,36 @@ export class VFXSystem {
     }
   }
 
+  clearTransient() {
+    for (let index = 0; index < this.bullets.length; index++) {
+      const bullet = this.bullets[index];
+      bullet.active = false;
+      bullet.remaining = 0;
+      this.setInstance(this.bulletPool, index, this.hiddenPosition, this.identityQuaternion, this.hiddenBulletScale);
+    }
+    this.bulletPool.instanceMatrix.needsUpdate = true;
+    for (let index = 0; index < this.particles.length; index++) {
+      const particle = this.particles[index];
+      particle.active = false;
+      particle.remaining = 0;
+      this.setInstance(this.particlePool, index, this.hiddenPosition, this.identityQuaternion, .001);
+    }
+    this.particlePool.instanceMatrix.needsUpdate = true;
+    for (const { light } of this.lights) {
+      light.intensity = 0;
+      light.visible = false;
+    }
+    for (const tracer of this.tracers) {
+      this.scene.remove(tracer.object);
+      tracer.object.geometry.dispose();
+      tracer.object.material.dispose();
+    }
+    this.tracers.length = 0;
+    this.decals.clear();
+  }
+
   dispose() {
+    this.clearTransient();
     this.decals.dispose();
     this.scene.remove(this.bulletPool, this.particlePool);
     this.lights.forEach(({ light }) => this.scene.remove(light));

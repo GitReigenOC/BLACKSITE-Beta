@@ -212,6 +212,13 @@
     }
     .damage-overlay.visible { opacity: 1; }
     .damage-overlay.flashbang { opacity: 1; background: rgba(255,255,239,.98); transition: opacity .65s ease-out; }
+    .spawn-shield-overlay {
+      position: absolute; z-index: 2; inset: 9px; border: 2px solid #8ce8ff;
+      border-radius: 12px; opacity: 0; pointer-events: none;
+      box-shadow: inset 0 0 38px #39c7ed30, 0 0 22px #39c7ed38;
+      transition: opacity .18s ease-out;
+    }
+    .spawn-shield-overlay.active { opacity: 1; }
     .thrown-item {
       position: absolute; z-index: 3; left: 67%; top: 72%; width: 14px; height: 14px;
       border: 2px solid #87907e; border-radius: 50%; pointer-events: none;

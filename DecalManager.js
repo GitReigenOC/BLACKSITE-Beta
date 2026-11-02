@@ -4,7 +4,9 @@ export class DecalManager {
     this.scene = scene;
     this.lifetime = lifetime;
     this.maxDecals = maxDecals;
-    this.decals = [];
+    this.expiresAt = new Float64Array(maxDecals);
+    this.active = new Uint8Array(maxDecals);
+    this.nextIndex = 0;
     this.geometry = new engine.PlaneGeometry(1, 1);
     this.geometry.computeBoundingBox();
     this.geometry.computeBoundingSphere();
@@ -20,6 +22,19 @@ export class DecalManager {
       polygonOffset: true,
       polygonOffsetFactor: -2
     });
+    this.mesh = new engine.InstancedMesh(this.geometry, this.material, maxDecals);
+    this.mesh.frustumCulled = false;
+    this.mesh.instanceMatrix.setUsage(engine.DynamicDrawUsage);
+    this.mesh.count = maxDecals;
+    this.dummy = new engine.Object3D();
+    this.normalizedNormal = new engine.Vector3(0, 0, 1);
+    this.color = new engine.Color();
+    this.forward = new engine.Vector3(0, 0, 1);
+    this.hiddenPosition = new engine.Vector3(0, -1000, 0);
+    this.hiddenScale = new engine.Vector3(.001, .001, .001);
+    this.scene.add(this.mesh);
+    for (let index = 0; index < maxDecals; index++) this.hide(index);
+    this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   loadBulletHoleTexture() {
@@ -46,51 +61,57 @@ export class DecalManager {
       context.fillRect(64 + Math.cos(angle) * radius, 64 + Math.sin(angle) * radius, 2, 2);
     }
 
-    const pngUrl = canvas.toDataURL("image/png");
-    const texture = new this.engine.TextureLoader().load(pngUrl);
+    const texture = new this.engine.CanvasTexture(canvas);
     texture.encoding = this.engine.sRGBEncoding;
     return texture;
   }
 
-  add(position, normal, size = .16, color = "#ffffff", now = performance.now()) {
-    const direction = normal.clone().normalize();
-    const material = this.material.clone();
-    material.color.set(color);
-    const geometry = this.geometry.clone();
-    const decal = new this.engine.Mesh(geometry, material);
-    decal.position.copy(position).addScaledVector(direction, .006);
-    decal.quaternion.setFromUnitVectors(new this.engine.Vector3(0, 0, 1), direction);
-    decal.scale.setScalar(size);
-    decal.renderOrder = 2;
-    decal.frustumCulled = false;
-    decal.userData.expiresAt = now + this.lifetime * 1000;
-    this.scene.add(decal);
-    this.decals.push(decal);
-    if (this.decals.length > this.maxDecals) this.remove(this.decals[0]);
-    return decal;
+  hide(index) {
+    this.active[index] = 0;
+    this.expiresAt[index] = 0;
+    this.dummy.position.copy(this.hiddenPosition);
+    this.dummy.quaternion.identity();
+    this.dummy.scale.copy(this.hiddenScale);
+    this.dummy.updateMatrix();
+    this.mesh.setMatrixAt(index, this.dummy.matrix);
   }
 
-  remove(decal) {
-    const index = this.decals.indexOf(decal);
-    if (index >= 0) this.decals.splice(index, 1);
-    this.scene.remove(decal);
-    decal.geometry.dispose();
-    decal.material.dispose();
+  add(position, normal, size = .16, color = "#ffffff", now = performance.now()) {
+    if (!position?.isVector3 || !normal?.isVector3 || normal.lengthSq() < 1e-8) return null;
+    this.normalizedNormal.copy(normal).normalize();
+    const index = this.nextIndex;
+    this.nextIndex = (index + 1) % this.maxDecals;
+    this.dummy.position.copy(position).addScaledVector(this.normalizedNormal, .006);
+    this.dummy.quaternion.setFromUnitVectors(this.forward, this.normalizedNormal);
+    this.dummy.rotateZ(Math.random() * Math.PI * 2);
+    this.dummy.scale.setScalar(size);
+    this.dummy.updateMatrix();
+    this.mesh.setMatrixAt(index, this.dummy.matrix);
+    this.mesh.setColorAt(index, this.color.set(color));
+    this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    this.active[index] = 1;
+    this.expiresAt[index] = now + this.lifetime * 1000;
+    return index;
   }
 
   update(now = performance.now()) {
-    for (let index = this.decals.length - 1; index >= 0; index--) {
-      const decal = this.decals[index];
-      if (now >= decal.userData.expiresAt) this.remove(decal);
+    let changed = false;
+    for (let index = 0; index < this.maxDecals; index++) {
+      if (!this.active[index] || now < this.expiresAt[index]) continue;
+      this.hide(index);
+      changed = true;
     }
+    if (changed) this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   clear() {
-    for (const decal of [...this.decals]) this.remove(decal);
+    for (let index = 0; index < this.maxDecals; index++) this.hide(index);
+    this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   dispose() {
-    this.clear();
+    this.scene.remove(this.mesh);
     this.geometry.dispose();
     this.material.dispose();
     this.texture.dispose();
