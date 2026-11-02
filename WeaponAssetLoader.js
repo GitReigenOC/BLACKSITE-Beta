@@ -24,14 +24,18 @@ export class WeaponAssetLoader {
     const group = new this.engine.Group();
     group.position.set(0, -.08, -.12);
     const receiverMaterial = new this.engine.MeshStandardMaterial({
-      color: index === 2 ? "#524936" : "#343a35",
+      color: index === 2 ? "#756b51" : "#657165",
       roughness: .48,
-      metalness: .62
+      metalness: .62,
+      emissive: "#202a21",
+      emissiveIntensity: .42
     });
     const darkMaterial = new this.engine.MeshStandardMaterial({
-      color: "#171b19",
+      color: "#252d27",
       roughness: .7,
-      metalness: .22
+      metalness: .22,
+      emissive: "#101610",
+      emissiveIntensity: .3
     });
     const addBox = (size, position, material = receiverMaterial) => {
       const mesh = new this.engine.Mesh(new this.engine.BoxGeometry(...size), material);
@@ -42,8 +46,15 @@ export class WeaponAssetLoader {
     };
 
     if (index === 4) {
-      addBox([.07, .045, .34], [0, 0, -.19]);
-      addBox([.055, .045, .27], [0, 0, -.49], darkMaterial);
+      const bladeMaterial = new this.engine.MeshStandardMaterial({
+        color: "#c5cec2",
+        roughness: .3,
+        metalness: .76,
+        emissive: "#343d32",
+        emissiveIntensity: .24
+      });
+      addBox([.07, .045, .34], [0, 0, -.19], bladeMaterial);
+      addBox([.055, .045, .27], [0, 0, -.49], bladeMaterial);
       addBox([.07, .13, .09], [0, -.075, .015], darkMaterial);
       return group;
     }

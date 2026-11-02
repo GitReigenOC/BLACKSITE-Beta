@@ -1,5 +1,5 @@
 export class DecalManager {
-  constructor(engine, scene, { lifetime = 5, maxDecals = 180 } = {}) {
+  constructor(engine, scene, { lifetime = 5, maxDecals = 180, textureKind = "bullet" } = {}) {
     this.engine = engine;
     this.scene = scene;
     this.lifetime = lifetime;
@@ -10,7 +10,7 @@ export class DecalManager {
     this.geometry = new engine.PlaneGeometry(1, 1);
     this.geometry.computeBoundingBox();
     this.geometry.computeBoundingSphere();
-    this.texture = this.loadBulletHoleTexture();
+    this.texture = this.loadDecalTexture(textureKind);
     this.material = new engine.MeshStandardMaterial({
       map: this.texture,
       transparent: true,
@@ -37,28 +37,53 @@ export class DecalManager {
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 
-  loadBulletHoleTexture() {
+  loadDecalTexture(textureKind) {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 128;
     const context = canvas.getContext("2d");
-    const glow = context.createRadialGradient(64, 64, 5, 64, 64, 55);
-    glow.addColorStop(0, "rgba(9,8,7,.98)");
-    glow.addColorStop(.24, "rgba(18,15,12,.94)");
-    glow.addColorStop(.43, "rgba(58,42,29,.72)");
-    glow.addColorStop(.62, "rgba(72,52,34,.24)");
-    glow.addColorStop(1, "rgba(0,0,0,0)");
-    context.fillStyle = glow;
-    context.fillRect(0, 0, 128, 128);
-    context.strokeStyle = "rgba(12,10,8,.78)";
-    context.lineWidth = 2;
-    context.beginPath();
-    context.ellipse(64, 64, 17, 15, -.18, 0, Math.PI * 2);
-    context.stroke();
-    for (let index = 0; index < 70; index++) {
-      const angle = index * 2.399963;
-      const radius = 19 + (index * 17 % 36);
-      context.fillStyle = index % 2 ? "rgba(10,9,7,.17)" : "rgba(116,85,54,.13)";
-      context.fillRect(64 + Math.cos(angle) * radius, 64 + Math.sin(angle) * radius, 2, 2);
+    if (textureKind === "slash") {
+      context.lineCap = "round";
+      context.shadowColor = "rgba(8,10,8,.95)";
+      context.shadowBlur = 7;
+      context.strokeStyle = "rgba(18,20,17,.92)";
+      context.lineWidth = 13;
+      context.beginPath();
+      context.moveTo(28, 99);
+      context.quadraticCurveTo(61, 58, 100, 25);
+      context.stroke();
+      context.shadowBlur = 0;
+      context.strokeStyle = "rgba(189,196,177,.68)";
+      context.lineWidth = 3;
+      context.beginPath();
+      context.moveTo(31, 94);
+      context.quadraticCurveTo(63, 58, 97, 30);
+      context.stroke();
+      context.strokeStyle = "rgba(24,26,22,.72)";
+      context.lineWidth = 8;
+      context.beginPath();
+      context.moveTo(43, 107);
+      context.quadraticCurveTo(72, 70, 111, 43);
+      context.stroke();
+    } else {
+      const glow = context.createRadialGradient(64, 64, 5, 64, 64, 55);
+      glow.addColorStop(0, "rgba(9,8,7,.98)");
+      glow.addColorStop(.24, "rgba(18,15,12,.94)");
+      glow.addColorStop(.43, "rgba(58,42,29,.72)");
+      glow.addColorStop(.62, "rgba(72,52,34,.24)");
+      glow.addColorStop(1, "rgba(0,0,0,0)");
+      context.fillStyle = glow;
+      context.fillRect(0, 0, 128, 128);
+      context.strokeStyle = "rgba(12,10,8,.78)";
+      context.lineWidth = 2;
+      context.beginPath();
+      context.ellipse(64, 64, 17, 15, -.18, 0, Math.PI * 2);
+      context.stroke();
+      for (let index = 0; index < 70; index++) {
+        const angle = index * 2.399963;
+        const radius = 19 + (index * 17 % 36);
+        context.fillStyle = index % 2 ? "rgba(10,9,7,.17)" : "rgba(116,85,54,.13)";
+        context.fillRect(64 + Math.cos(angle) * radius, 64 + Math.sin(angle) * radius, 2, 2);
+      }
     }
 
     const texture = new this.engine.CanvasTexture(canvas);

@@ -53,7 +53,12 @@
     .pause-button:hover { background: #303c2d; }
 
     .stage { position: relative; aspect-ratio: 16 / 9; background: #18201a; }
-    canvas { width: 100%; height: 100%; display: block; }
+    canvas {
+      width: 100%; height: 100%; display: block;
+      touch-action: none; user-select: none; -webkit-user-select: none;
+    }
+    .game-shell:-webkit-full-screen { display: flex; flex-direction: column; width: 100vw; height: 100vh; border: 0; }
+    .game-shell:-webkit-full-screen .stage { flex: 1; min-height: 0; aspect-ratio: auto; }
     .game-shell:fullscreen { display: flex; flex-direction: column; width: 100vw; height: 100vh; border: 0; }
     .game-shell:fullscreen .stage { flex: 1; min-height: 0; aspect-ratio: auto; }
 
@@ -70,10 +75,16 @@
     .hud-column { display: flex; flex-direction: column; justify-content: space-between; }
     .hud-column--right { align-items: flex-end; }
     .score-value { display: block; text-align: right; }
+    .credits-value { margin-top: 7px; color: #aab4a4; font-size: 8px; letter-spacing: .16em; }
+    .credits-value b { color: #d3ef87; font-size: 11px; }
     .ammo-panel { text-align: right; }
     .eyebrow { color: #c1e16d; font-size: 10px; font-weight: 700; letter-spacing: .2em; }
     .wave { margin-top: 6px; font-size: clamp(20px, 3vw, 30px); font-weight: 800; letter-spacing: .04em; }
     .objective { margin-top: 5px; color: #bac3b4; font-size: 11px; }
+    .boss-health { width: min(260px, 42vw); margin-top: 12px; color: #f0ab81; font-size: 8px; font-weight: 800; letter-spacing: .16em; }
+    .boss-health[hidden] { display: none; }
+    .boss-health-track { height: 5px; margin-top: 5px; background: #472b28; }
+    #boss-health-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #bc403c, #e58854); transition: width .12s linear; }
     .stats { display: flex; gap: clamp(18px, 4vw, 42px); align-items: end; }
     .stat-label { color: #acb6a7; font-size: 9px; letter-spacing: .18em; }
     .stat-value { margin-top: 3px; font-size: clamp(19px, 3vw, 28px); font-weight: 800; }
@@ -81,6 +92,12 @@
     .ammo-divider { color: #768171; }
     .health-track { width: 120px; max-width: 22vw; height: 5px; margin-top: 7px; background: #354037; }
     .health-fill { height: 100%; width: 100%; background: #c1e16d; transition: width .15s, background .15s; }
+    .stamina-label {
+      display: flex; justify-content: space-between; margin-top: 9px;
+      color: #b6c0b3; font-size: 8px; letter-spacing: .12em;
+    }
+    .stamina-track { width: min(150px, 30vw); height: 3px; margin-top: 4px; background: #77827355; }
+    .stamina-fill { width: 100%; height: 100%; background: #79d8d0; transition: width .12s linear; }
     .tactical-counts { display: flex; gap: 12px; margin-top: 7px; color: #aab4a4; font-size: 8px; letter-spacing: .12em; }
     .tactical-counts b { color: #d3ef87; }
     .crosshair {
@@ -211,7 +228,10 @@
       transition: opacity .12s;
     }
     .damage-overlay.visible { opacity: 1; }
-    .damage-overlay.flashbang { opacity: 1; background: rgba(255,255,239,.98); transition: opacity .65s ease-out; }
+    .damage-overlay.flashbang {
+      z-index: 3; opacity: var(--flashbang-opacity, 1);
+      background: rgba(255,255,239,.99); transition: opacity .08s linear;
+    }
     .spawn-shield-overlay {
       position: absolute; z-index: 2; inset: 9px; border: 2px solid #8ce8ff;
       border-radius: 12px; opacity: 0; pointer-events: none;
@@ -241,6 +261,18 @@
     .menu-panel h1 { font-size: clamp(28px, 5vw, 46px); }
     .menu-panel p { color: #b6c0b3; font-size: 12px; line-height: 1.5; }
     .menu-panel strong { color: #d3ef87; }
+    .shop-balance { margin: 12px 0; color: #aab4a4; font-size: 9px; letter-spacing: .16em; }
+    .shop-balance b { color: #d3ef87; font-size: 13px; }
+    .shop-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; text-align: left; }
+    .shop-item {
+      display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center;
+      gap: 9px; min-height: 62px; padding: 8px; border: 1px solid #465044; background: #111713;
+    }
+    .shop-swatch { display: block; width: 34px; height: 34px; border: 1px solid #b2bea9; }
+    .shop-item-copy { display: grid; gap: 4px; min-width: 0; }
+    .shop-item-copy strong { overflow: hidden; color: #dce5d4; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .shop-item-copy span { color: #93a08d; font-size: 8px; letter-spacing: .08em; }
+    .shop-item button { margin: 0; padding: 8px; font-size: 8px; }
     .settings-panel { width: min(520px, 100%); }
     .setting-row {
       display: block; margin: 22px 0; color: #dce5d4; text-align: left;
@@ -424,6 +456,7 @@
       .menu-layer { padding: 10px; }
       .menu-panel { padding: 16px; }
       .server-content { grid-template-columns: 1fr; }
+      .shop-items { grid-template-columns: 1fr; max-height: 38vh; overflow-y: auto; }
       .map-grid { grid-template-columns: 1fr; max-height: 28vh; overflow-y: auto; }
       .map-card { min-height: 58px; }
       .room-list { max-height: 140px; }

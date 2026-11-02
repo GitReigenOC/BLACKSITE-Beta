@@ -1,12 +1,15 @@
 import { DecalManager } from "./DecalManager.js";
 
 export class VFXSystem {
-  constructor(engine, scene, { bulletCapacity = 80, particleCapacity = 256 } = {}) {
+  constructor(engine, scene, { bulletCapacity = 80, particleCapacity = 256, tracerCapacity = 96 } = {}) {
     this.engine = engine;
     this.scene = scene;
     this.bullets = [];
     this.bulletCursor = 0;
-    this.tracers = [];
+    this.tracers = Array.from({ length: tracerCapacity }, () => ({
+      active: false, remaining: 0, duration: .075
+    }));
+    this.tracerCursor = 0;
     this.particleCursor = 0;
     this.particles = Array.from({ length: particleCapacity }, () => ({
       active: false,
@@ -29,6 +32,7 @@ export class VFXSystem {
     this.identityQuaternion = new engine.Quaternion();
     this.bulletOrientation = new engine.Quaternion();
     this.bulletForward = new engine.Vector3(0, 0, 1);
+    this.tracerUp = new engine.Vector3(0, 1, 0);
     this.bulletDirection = new engine.Vector3();
     this.bulletScale = new engine.Vector3(1, 1, 9);
     this.hiddenBulletScale = new engine.Vector3(.001, .001, .001);
@@ -49,6 +53,24 @@ export class VFXSystem {
       this.setInstance(this.bulletPool, index, this.hiddenPosition, this.identityQuaternion, this.hiddenBulletScale);
       this.bullets.push({ active: false, position: new engine.Vector3(), velocity: new engine.Vector3(), remaining: 0 });
     }
+    this.tracerPool = new engine.InstancedMesh(
+      new engine.BoxGeometry(1, 1, 1),
+      new engine.MeshBasicMaterial({
+        color: "#ffffff",
+        transparent: true,
+        opacity: .88,
+        depthTest: true,
+        depthWrite: false
+      }),
+      tracerCapacity
+    );
+    this.tracerPool.frustumCulled = false;
+    this.tracerPool.instanceMatrix.setUsage(engine.DynamicDrawUsage);
+    this.tracerPool.userData.capacity = tracerCapacity;
+    this.scene.add(this.tracerPool);
+    for (let index = 0; index < tracerCapacity; index++) {
+      this.setInstance(this.tracerPool, index, this.hiddenPosition, this.identityQuaternion, .001);
+    }
 
     this.particleGeometry = this.withBounds(new engine.SphereGeometry(1, 8, 6));
     this.particlePool = new engine.InstancedMesh(
@@ -65,6 +87,7 @@ export class VFXSystem {
     }
 
     this.decals = new DecalManager(engine, scene);
+    this.slashes = new DecalManager(engine, scene, { lifetime: 5, maxDecals: 48, textureKind: "slash" });
   }
 
   withBounds(geometry) {
@@ -112,24 +135,51 @@ export class VFXSystem {
   }
 
   addTracer(start, end, color = "#f3d58c") {
-    const geometry = new this.engine.BufferGeometry().setFromPoints([start.clone(), end.clone()]);
-    const material = new this.engine.LineBasicMaterial({ color, transparent: true, opacity: .9, depthTest: true, depthWrite: false });
-    const line = new this.engine.Line(geometry, material);
-    line.frustumCulled = false;
-    this.scene.add(line);
-    this.tracers.push({ object: line, remaining: .075, duration: .075 });
+    let slot = -1;
+    for (let checked = 0; checked < this.tracers.length; checked++) {
+      const candidate = (this.tracerCursor + checked) % this.tracers.length;
+      if (!this.tracers[candidate].active) {
+        slot = candidate;
+        break;
+      }
+    }
+    if (slot < 0) slot = this.tracerCursor;
+    const tracer = this.tracers[slot];
+    this.tracerCursor = (slot + 1) % this.tracers.length;
+    this.dummy.position.copy(start).add(end).multiplyScalar(.5);
+    this.bulletDirection.copy(end).sub(start);
+    const length = this.bulletDirection.length();
+    if (length < .001) return false;
+    this.bulletDirection.multiplyScalar(1 / length);
+    this.bulletOrientation.setFromUnitVectors(this.tracerUp, this.bulletDirection);
+    this.dummy.quaternion.copy(this.bulletOrientation);
+    this.dummy.scale.set(.012, length, .012);
+    this.dummy.updateMatrix();
+    this.tracerPool.setMatrixAt(slot, this.dummy.matrix);
+    this.tracerPool.setColorAt(slot, this.colorScratch.set(color));
+    this.tracerPool.instanceMatrix.needsUpdate = true;
+    this.tracerPool.instanceColor.needsUpdate = true;
+    tracer.active = true;
+    tracer.remaining = tracer.duration;
+    return true;
   }
 
   spawnImpact(position, normal, color = "#44392d", size = .11) {
     this.decals.add(position, normal, size, color);
   }
 
+  spawnSlash(position, normal, size = .42) {
+    this.slashes.add(position, normal, size, "#ffffff");
+  }
+
   clearDecals() {
     this.decals.clear();
+    this.slashes.clear();
   }
 
   updateDecals(now) {
     this.decals.update(now);
+    this.slashes.update(now);
   }
 
   spawnParticle(position, {
@@ -255,16 +305,17 @@ export class VFXSystem {
       bulletsChanged = true;
     }
     if (bulletsChanged) this.bulletPool.instanceMatrix.needsUpdate = true;
-    for (let index = this.tracers.length - 1; index >= 0; index--) {
+    let tracersChanged = false;
+    for (let index = 0; index < this.tracers.length; index++) {
       const tracer = this.tracers[index];
+      if (!tracer.active) continue;
       tracer.remaining -= dt;
-      tracer.object.material.opacity = Math.max(0, tracer.remaining / tracer.duration);
       if (tracer.remaining > 0) continue;
-      this.scene.remove(tracer.object);
-      tracer.object.geometry.dispose();
-      tracer.object.material.dispose();
-      this.tracers.splice(index, 1);
+      tracer.active = false;
+      this.setInstance(this.tracerPool, index, this.hiddenPosition, this.identityQuaternion, .001);
+      tracersChanged = true;
     }
+    if (tracersChanged) this.tracerPool.instanceMatrix.needsUpdate = true;
     let activeParticles = false;
     for (let index = this.particles.length - 1; index >= 0; index--) {
       const particle = this.particles[index];
@@ -334,21 +385,25 @@ export class VFXSystem {
       light.intensity = 0;
       light.visible = false;
     }
-    for (const tracer of this.tracers) {
-      this.scene.remove(tracer.object);
-      tracer.object.geometry.dispose();
-      tracer.object.material.dispose();
+    for (let index = 0; index < this.tracers.length; index++) {
+      this.tracers[index].active = false;
+      this.tracers[index].remaining = 0;
+      this.setInstance(this.tracerPool, index, this.hiddenPosition, this.identityQuaternion, .001);
     }
-    this.tracers.length = 0;
+    this.tracerPool.instanceMatrix.needsUpdate = true;
     this.decals.clear();
+    this.slashes.clear();
   }
 
   dispose() {
     this.clearTransient();
     this.decals.dispose();
-    this.scene.remove(this.bulletPool, this.particlePool);
+    this.slashes.dispose();
+    this.scene.remove(this.bulletPool, this.tracerPool, this.particlePool);
     this.lights.forEach(({ light }) => this.scene.remove(light));
     this.bulletGeometry.dispose();
+    this.tracerPool.geometry.dispose();
+    this.tracerPool.material.dispose();
     this.particleGeometry.dispose();
     this.bulletPool.material.dispose();
     this.particlePool.material.dispose();
