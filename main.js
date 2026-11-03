@@ -26,6 +26,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       const scene = new THREE.Scene();
       scene.background = new THREE.Color("#111a17");
       scene.fog = new THREE.Fog("#202920", 12, 27);
+      const referenceViewModelFov = 82;
       const camera = new THREE.PerspectiveCamera(72, 16 / 9, .035, 120);
       camera.rotation.order = "YXZ";
       camera.position.set(7.5, 1.65, -7.5);
@@ -2876,7 +2877,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           const viewportHeight = canvas.clientHeight || window.innerHeight;
           const viewportAspect = (canvas.clientWidth || window.innerWidth) / viewportHeight;
           const aspectScale = THREE.MathUtils.clamp(viewportAspect / (16 / 9), .78, 1);
-          const viewModelScale = THREE.MathUtils.clamp(viewportHeight / 720, .78, 1.12) * aspectScale;
+          const viewModelScale = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) /
+            Math.tan(THREE.MathUtils.degToRad(referenceViewModelFov / 2));
           const weaponBaseY = currentWeapon().melee ? -.12 : -.3;
           const weaponBaseZ = currentWeapon().melee ? -.55 : -.48;
           const targetWeaponPosition = new THREE.Vector3(
@@ -2888,6 +2890,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           targetWeaponPosition.z += aimOffset ? .12 : 0;
           targetWeaponPosition.x += Math.sin(performance.now() * .0018) * (moving ? .008 : .003) -
             weaponLagX * .00045;
+          targetWeaponPosition.x *= viewModelScale;
+          targetWeaponPosition.y *= viewModelScale;
           weaponAnchor.position.lerp(targetWeaponPosition, .22);
           const meleeArc = currentWeapon().melee ? Math.sin((1 - knifeSwing) * Math.PI) : 0;
           const inspectRotation = inspectStyle.rotation;
@@ -2901,7 +2905,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           muzzleLight.intensity = muzzleFlash > 0 ? 3.5 : 0;
           weaponModels.forEach((model, index) => {
             model.visible = index === player.weaponIndex && !(aiming && currentWeapon().scoped);
-            const firearmScale = currentWeapon().melee ? 1 : 1.12 * viewModelScale;
+            const firearmScale = (currentWeapon().melee ? 1 : 1.12) * viewModelScale;
             model.scale.setScalar(index === player.weaponIndex ? firearmScale * inspectScale : 1);
           });
         }
