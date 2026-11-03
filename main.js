@@ -2905,7 +2905,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           muzzleLight.intensity = muzzleFlash > 0 ? 3.5 : 0;
           weaponModels.forEach((model, index) => {
             model.visible = index === player.weaponIndex && !(aiming && currentWeapon().scoped);
-            const firearmScale = (currentWeapon().melee ? 1 : 1.12) * viewModelScale;
+            const firearmScale = (currentWeapon().melee ? 1 : 1.65) * viewModelScale;
             model.scale.setScalar(index === player.weaponIndex ? firearmScale * inspectScale : 1);
           });
         }
