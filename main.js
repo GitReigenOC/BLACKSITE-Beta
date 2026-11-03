@@ -60,14 +60,16 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       const arenaTextures = new Map();
       let poolWaterMaterial = null;
       const enemyModels = new Map();
-      let replayGhostMaterial = null;
       let enemyRigTemplate = null;
       let enemyRigAnimations = [];
+      let playerRigModel = null;
+      let playerRigActor = null;
       let warnedMissingHandSocket = false;
       let remoteModel = null;
       let replayPlayerModel = null;
       let replayPlayerActor = null;
       let weaponAnchor = null;
+      let viewmodelHands = null;
       let muzzleLight = null;
       let parryShield = null;
       let weaponModels = [];
@@ -118,22 +120,34 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           Array.from({ length: size }, (_, x) => x === 0 || y === 0 || x === size - 1 || y === size - 1 ? "1" : "0"));
       }
 
-      function applyFlashToPlayer(blastX, blastY, sourceAngle) {
+      let pendingPlayerFlash = null;
+      function applyFlashToPlayer(blastX, blastY) {
         if (!running || gameOver) return;
-        const distance = Math.hypot(blastX - player.x, blastY - player.y);
-        const facingX = Math.cos(player.angle), facingY = Math.sin(player.angle);
-        const towardBlastX = blastX - player.x, towardBlastY = blastY - player.y;
-        const facingDot = facingX * towardBlastX + facingY * towardBlastY;
-        const distanceToWall = castRayFrom(player.x, player.y, Math.atan2(towardBlastY, towardBlastX)).distance;
-        if (distance > 8 || facingDot <= 0 || distanceToWall < distance - .25) return;
-        playerFlashTimer = 5;
-        playerFlashFadeTimer = .5;
-        const overlay = document.querySelector("#damage-overlay");
-        overlay.classList.add("flashbang");
-        overlay.style.setProperty("--flashbang-opacity", "1");
+        pendingPlayerFlash = { x: blastX, y: blastY, delay: .45 };
       }
 
       function updateFlashEffect(dt) {
+        if (pendingPlayerFlash) {
+          pendingPlayerFlash.delay -= dt;
+          if (pendingPlayerFlash.delay <= 0) {
+            const { x, y } = pendingPlayerFlash;
+            pendingPlayerFlash = null;
+            const towardBlastX = x - player.x, towardBlastY = y - player.y;
+            const distance = Math.hypot(towardBlastX, towardBlastY);
+            const facing = (Math.cos(player.angle) * towardBlastX +
+              Math.sin(player.angle) * towardBlastY) / Math.max(distance, .001);
+            const distanceToWall = castRayFrom(player.x, player.y, Math.atan2(towardBlastY, towardBlastX)).distance;
+            if (distance <= 8 && facing > .15 && distanceToWall >= distance - .25) {
+              const exposure = THREE.MathUtils.clamp((facing - .15) / .85, 0, 1);
+              const distanceScale = THREE.MathUtils.clamp(1 - distance / 10, .2, 1);
+              playerFlashTimer = Math.max(playerFlashTimer, 5 * exposure * distanceScale);
+              playerFlashOpacity = exposure * distanceScale;
+              playerFlashFadeIn = 0;
+              playerFlashFadeTimer = .5;
+            }
+          }
+        }
+        if (playerFlashTimer > 0) playerFlashFadeIn += dt;
         playerFlashTimer = Math.max(0, playerFlashTimer - dt);
         if (playerFlashTimer === 0 && playerFlashFadeTimer > 0) {
           playerFlashFadeTimer = Math.max(0, playerFlashFadeTimer - dt);
@@ -142,24 +156,16 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const flashVisible = playerFlashTimer > 0 || playerFlashFadeTimer > 0;
         flashOverlay.classList.toggle("flashbang", flashVisible);
         if (flashVisible) {
-          flashOverlay.style.setProperty("--flashbang-opacity",
-            playerFlashTimer > 0 ? "1" : String(playerFlashFadeTimer / .5));
+          const opacity = playerFlashTimer > 0
+            ? playerFlashOpacity * THREE.MathUtils.clamp(playerFlashFadeIn / .18, 0, 1)
+            : playerFlashOpacity * playerFlashFadeTimer / .5;
+          flashOverlay.style.setProperty("--flashbang-opacity", String(opacity));
         } else {
           flashOverlay.style.removeProperty("--flashbang-opacity");
         }
       }
-      function createBattlefield() {
-        const grid = createMapGrid(36);
-        for (let x = 5; x < 31; x++) {
-          if (x < 11 || x > 14) grid[8][x] = "1";
-          if (x < 21 || x > 24) grid[27][x] = "1";
-        }
-        for (let y = 5; y < 31; y++) {
-          if (y < 13 || y > 16) grid[y][12] = "1";
-          if (y < 20 || y > 23) grid[y][23] = "1";
-        }
-        [[6, 6], [7, 6], [28, 6], [29, 6], [6, 29], [7, 29], [28, 29], [29, 29],
-          [17, 5], [18, 5], [17, 30], [18, 30], [5, 18], [30, 18]].forEach(([x, y]) => { grid[y][x] = "1"; });
+      function createOpenFieldGrid() {
+        const grid = createMapGrid(32);
         return grid.map(row => row.join(""));
       }
       function createPoolRooms() {
@@ -197,21 +203,23 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           sun: "#f0e5c4", sunPower: 2.2, floorRoughness: .8, wallRoughness: .88, lightColor: "#d3dbac"
         },
         battlefield: {
-          name: "Battlefield", grid: createBattlefield(), spawn: { x: 18.5, y: 18.5 },
+          name: "Battlefield", grid: createOpenFieldGrid(), spawn: { x: 16.5, y: 16.5 },
           spawnPoints: [
-            new THREE.Vector3(18.5, 0, -18.5), new THREE.Vector3(4.5, 0, -4.5),
-            new THREE.Vector3(31.5, 0, -4.5), new THREE.Vector3(4.5, 0, -31.5),
-            new THREE.Vector3(31.5, 0, -31.5), new THREE.Vector3(7.5, 0, -18.5),
-            new THREE.Vector3(28.5, 0, -18.5)
+            new THREE.Vector3(16.5, 0, -16.5), new THREE.Vector3(4.5, 0, -4.5),
+            new THREE.Vector3(27.5, 0, -4.5), new THREE.Vector3(4.5, 0, -27.5),
+            new THREE.Vector3(27.5, 0, -27.5), new THREE.Vector3(7.5, 0, -16.5),
+            new THREE.Vector3(24.5, 0, -16.5)
           ],
           enemySpawns: [
-            new THREE.Vector3(4.5, 0, -4.5), new THREE.Vector3(31.5, 0, -4.5),
-            new THREE.Vector3(4.5, 0, -31.5), new THREE.Vector3(31.5, 0, -31.5),
-            new THREE.Vector3(7.5, 0, -18.5), new THREE.Vector3(28.5, 0, -18.5)
+            new THREE.Vector3(4.5, 0, -4.5), new THREE.Vector3(27.5, 0, -4.5),
+            new THREE.Vector3(4.5, 0, -27.5), new THREE.Vector3(27.5, 0, -27.5),
+            new THREE.Vector3(7.5, 0, -16.5), new THREE.Vector3(24.5, 0, -16.5)
           ],
+          dimensions: { width: 32, depth: 32 }, collisionBoxes: [], hazards: [], elevationZones: [],
           outdoor: true, floor: "#51483a", floorLine: "#675943", wall: "#716552", wallLine: "#443f36",
           ceiling: "#252a29", fog: "#756d60", background: "#526b78", ambient: "#91a7a5", ambientPower: .8,
-          sun: "#ffd29a", sunPower: 2.7, floorRoughness: .96, wallRoughness: .93, lightColor: "#ffb979"
+          sun: "#ffd29a", sunPower: 2.7, floorRoughness: .96, wallRoughness: .93, lightColor: "#ffb979",
+          fogNear: 34, fogFar: 72
         },
         pool: {
           name: "The Pool Rooms", grid: createPoolRooms(), spawn: { x: 15.5, y: 15.5 },
@@ -232,59 +240,171 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         }
       };
       function createFoundryGrid() {
-        const grid = createMapGrid(32);
-        for (let x = 4; x < 28; x++) {
-          if (x < 10 || x > 13) grid[9][x] = "1";
-          if (x < 18 || x > 21) grid[22][x] = "1";
+        const grid = createMapGrid(28);
+        for (let x = 4; x < 24; x++) {
+          if (x < 10 || x > 13) grid[8][x] = "1";
+          if (x < 15 || x > 18) grid[19][x] = "1";
         }
-        for (let y = 4; y < 28; y++) {
-          if (y < 11 || y > 14) grid[y][10] = "1";
-          if (y < 18 || y > 21) grid[y][21] = "1";
+        for (let y = 4; y < 24; y++) {
+          if (y < 10 || y > 13) grid[y][9] = "1";
+          if (y < 15 || y > 18) grid[y][18] = "1";
         }
-        [[6, 6], [7, 6], [24, 6], [25, 6], [6, 25], [7, 25], [24, 25], [25, 25]]
+        [[5, 5], [6, 5], [21, 5], [22, 5], [5, 21], [6, 21], [21, 21], [22, 21]]
           .forEach(([x, y]) => { grid[y][x] = "1"; });
         return grid.map(row => row.join(""));
       }
       function createRooftopGrid() {
-        const grid = createMapGrid(36);
-        for (let x = 5; x < 31; x++) {
-          if (x < 14 || x > 18) grid[12][x] = "1";
-          if (x < 21 || x > 25) grid[23][x] = "1";
+        const grid = createMapGrid(24);
+        for (let x = 0; x < 24; x++) {
+          grid[0][x] = "0";
+          grid[23][x] = "0";
         }
-        for (let y = 5; y < 31; y++) {
-          if (y < 10 || y > 14) grid[y][11] = "1";
-          if (y < 21 || y > 25) grid[y][24] = "1";
+        for (let y = 0; y < 24; y++) {
+          grid[y][0] = "0";
+          grid[y][23] = "0";
         }
-        [[7, 7], [8, 7], [27, 7], [28, 7], [7, 28], [8, 28], [27, 28], [28, 28]]
+        for (let x = 4; x < 20; x++) {
+          if (x < 9 || x > 12) grid[7][x] = "1";
+          if (x < 12 || x > 15) grid[16][x] = "1";
+        }
+        for (let y = 4; y < 20; y++) {
+          if (y < 9 || y > 12) grid[y][7] = "1";
+          if (y < 12 || y > 15) grid[y][16] = "1";
+        }
+        [[10, 10], [11, 10], [12, 10], [10, 11], [11, 11], [12, 11]]
           .forEach(([x, y]) => { grid[y][x] = "1"; });
         return grid.map(row => row.join(""));
       }
-      const createAuthoredMap = (name, grid, spawn, palette) => {
+      function createOutpostGrid() {
+        const grid = createMapGrid(28);
+        for (let x = 3; x < 25; x++) {
+          if (x < 12 || x > 15) grid[7][x] = "1";
+          if (x < 9 || x > 12) grid[20][x] = "1";
+        }
+        for (let y = 3; y < 25; y++) {
+          if (y < 10 || y > 13) grid[y][8] = "1";
+          if (y < 6 || y > 9) grid[y][19] = "1";
+        }
+        [[4, 4], [5, 4], [22, 4], [23, 4], [4, 23], [5, 23], [22, 23], [23, 23]]
+          .forEach(([x, y]) => { grid[y][x] = "1"; });
+        return grid.map(row => row.join(""));
+      }
+      function createSubwayGrid() {
+        const grid = createMapGrid(26);
+        for (let x = 2; x < 24; x++) {
+          if (x < 9 || x > 12) grid[6][x] = "1";
+          if (x < 13 || x > 16) grid[20][x] = "1";
+        }
+        for (let y = 2; y < 26; y++) {
+          if (y < 10 || y > 13) grid[y][7] = "1";
+          if (y < 14 || y > 17) grid[y][18] = "1";
+        }
+        [[3, 3], [4, 3], [21, 3], [22, 3], [3, 22], [4, 22], [21, 22], [22, 22]]
+          .forEach(([x, y]) => { grid[y][x] = "1"; });
+        return grid.map(row => row.join(""));
+      }
+      const createAuthoredMap = (name, grid, spawn, palette, extras = {}) => {
         const point = (x, y) => new THREE.Vector3(x, 0, -y);
         const offsets = [[4, 4], [-4, 4], [4, -4], [-4, -4], [0, 6], [0, -6]];
-        const spawnPoints = [point(spawn.x, spawn.y), ...offsets.map(([x, y]) => point(spawn.x + x, spawn.y + y))];
-        const enemySpawns = offsets.map(([x, y]) => point(spawn.x + x, spawn.y + y));
+        const isSafeSpawn = (x, y) => {
+          if (x < .24 || y < .24 || x > grid[0].length - .24 || y > grid.length - .24) return false;
+          for (const [offsetX, offsetY] of [[-.24, -.24], [.24, -.24], [-.24, .24], [.24, .24]]) {
+            if (grid[Math.floor(y + offsetY)]?.[Math.floor(x + offsetX)] !== "0") return false;
+          }
+          if ((extras.collisionBoxes || []).some(box =>
+            x + .24 > box.minX && x - .24 < box.maxX &&
+            y + .24 > box.minY && y - .24 < box.maxY
+          )) return false;
+          return !(extras.hazards || []).some(area =>
+            x + .24 >= area.minX && x - .24 <= area.maxX &&
+            y + .24 >= area.minY && y - .24 <= area.maxY
+          );
+        };
+        const spawnPoints = [
+          point(spawn.x, spawn.y),
+          ...offsets.map(([x, y]) => point(spawn.x + x, spawn.y + y))
+        ].filter(position => isSafeSpawn(position.x, -position.z));
+        const enemySpawns = offsets
+          .map(([x, y]) => point(spawn.x + x, spawn.y + y))
+          .filter(position => isSafeSpawn(position.x, -position.z));
         return {
           name, grid, spawn, spawnPoints, enemySpawns, outdoor: true,
+          dimensions: { width: grid[0].length, depth: grid.length },
+          collisionBoxes: [], hazards: [], elevationZones: [],
           floor: palette.floor, floorLine: palette.floorLine, wall: palette.wall, wallLine: palette.wallLine,
           ceiling: "#29302b", fog: palette.fog, background: palette.background,
           ambient: palette.ambient, ambientPower: .92, sun: palette.sun, sunPower: 2.4,
-          floorRoughness: .88, wallRoughness: .82, lightColor: palette.sun
+          floorRoughness: .88, wallRoughness: .82, lightColor: palette.sun, ...extras
         };
       };
-      mapDefinitions.foundry = createAuthoredMap("Iron Foundry", createFoundryGrid(), { x: 15.5, y: 15.5 }, {
+      mapDefinitions.iron_foundry = createAuthoredMap("Iron Foundry", createFoundryGrid(), { x: 14.5, y: 12.5 }, {
         floor: "#55493b", floorLine: "#756146", wall: "#77614b", wallLine: "#4b3b2e",
-        fog: "#67513f", background: "#362a20", ambient: "#c5a17c", sun: "#ffb36b"
+        fog: "#66534a", background: "#362a20", ambient: "#c5a17c", sun: "#ffb36b"
+      }, {
+        collisionBoxes: [
+          { minX: 11, maxX: 13, minY: 11, maxY: 13, minHeight: 0, maxHeight: 1.4, kind: "vat" },
+          { minX: 14, maxX: 16, minY: 14, maxY: 16, minHeight: 0, maxHeight: 1.4, kind: "vat" },
+          { minX: 5, maxX: 7, minY: 5, maxY: 7, minHeight: 0, maxHeight: 2.8, kind: "pillar" },
+          { minX: 21, maxX: 23, minY: 5, maxY: 7, minHeight: 0, maxHeight: 2.8, kind: "pillar" },
+          { minX: 5, maxX: 7, minY: 21, maxY: 23, minHeight: 0, maxHeight: 2.8, kind: "pillar" },
+          { minX: 21, maxX: 23, minY: 21, maxY: 23, minHeight: 0, maxHeight: 2.8, kind: "pillar" }
+        ],
+        hazards: [
+          { minX: 10.25, maxX: 13.75, minY: 10.25, maxY: 13.75, damagePerSecond: 22 },
+          { minX: 13.25, maxX: 16.75, minY: 13.25, maxY: 16.75, damagePerSecond: 22 }
+        ],
+        elevationZones: [
+          { minX: 3, maxX: 9, minY: 13.5, maxY: 15.5, height: 2 },
+          { minX: 18, maxX: 25, minY: 13.5, maxY: 15.5, height: 2 },
+          { minX: 11, maxX: 15, minY: 3, maxY: 6, height: 2 }
+        ],
+        fogNear: 5, fogFar: 24, ambientPower: .35, sunPower: 1.6
       });
-      mapDefinitions.rooftop = createAuthoredMap("Rooftop", createRooftopGrid(), { x: 17.5, y: 17.5 }, {
+      mapDefinitions.rooftop = createAuthoredMap("Rooftop", createRooftopGrid(), { x: 14.5, y: 13.5 }, {
         floor: "#46545a", floorLine: "#60747b", wall: "#66777a", wallLine: "#354348",
         fog: "#647d8e", background: "#324b5a", ambient: "#b1c8cc", sun: "#f7d9a1"
+      }, {
+        collisionBoxes: [
+          { minX: 10, maxX: 13, minY: 10, maxY: 12, minHeight: 0, maxHeight: 1.7, kind: "hvac" }
+        ],
+        hazards: [],
+        elevationZones: [],
+        fogNear: 10, fogFar: 30, ambientPower: .65, sunPower: 3.4
       });
+      mapDefinitions.desert_outpost = createAuthoredMap("Desert Outpost", createOutpostGrid(), { x: 14.5, y: 13.5 }, {
+        floor: "#81704d", floorLine: "#b09362", wall: "#725b3c", wallLine: "#493c2d",
+        fog: "#b78b58", background: "#86694d", ambient: "#e1c18b", sun: "#ffe0a2"
+      }, {
+        collisionBoxes: [
+          { minX: 11, maxX: 15, minY: 4, maxY: 6, minHeight: 0, maxHeight: 1.25, kind: "sandbags" },
+          { minX: 13, maxX: 17, minY: 21, maxY: 23, minHeight: 0, maxHeight: 1.25, kind: "sandbags" },
+          { minX: 22, maxX: 25, minY: 11, maxY: 13, minHeight: 0, maxHeight: 2.4, kind: "watchtower" }
+        ],
+        hazards: [],
+        elevationZones: [],
+        fogNear: 26, fogFar: 58, ambientPower: .68, sunPower: 3.6
+      });
+      mapDefinitions.subway_terminal = createAuthoredMap("Subway Terminal", createSubwayGrid(), { x: 13.5, y: 13.5 }, {
+        floor: "#3d4948", floorLine: "#697271", wall: "#56615f", wallLine: "#303938",
+        fog: "#454e4e", background: "#242d2d", ambient: "#91a5a1", sun: "#c5d0c9"
+      }, {
+        collisionBoxes: [
+          { minX: 10, maxX: 11.5, minY: 10, maxY: 17, minHeight: 0, maxHeight: 2.2, kind: "platform-pillar" },
+          { minX: 15.5, maxX: 17, minY: 10, maxY: 17, minHeight: 0, maxHeight: 2.2, kind: "platform-pillar" },
+          { minX: 11, maxX: 15, minY: 7, maxY: 8, minHeight: 0, maxHeight: .8, kind: "bench" },
+          { minX: 12, maxX: 16, minY: 19, maxY: 20, minHeight: 0, maxHeight: .8, kind: "bench" }
+        ],
+        hazards: [],
+        elevationZones: [],
+        fogNear: 8, fogFar: 30, ambientPower: .42, sunPower: .8
+      });
+      mapDefinitions.foundry = mapDefinitions.iron_foundry;
       let activeMapId = "arena";
       let selectedMapId = "arena";
       let map = mapDefinitions[activeMapId].grid;
       let mapGroup = null;
       let mapWalls = null;
+      let mapObstacleMeshes = [];
       let dynamicMapLights = [];
       let animatedMapProps = [];
       let playerPitch = 0;
@@ -419,6 +539,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const width = map[0].length, depth = map.length;
         animatedMapProps = [];
         dynamicMapLights = [];
+        mapObstacleMeshes = [];
         const floorTextures = cachedArenaTexture(`${mapId}-floor`, definition.floor, definition.floorLine, width, depth);
         const wallTextures = cachedArenaTexture(`${mapId}-wall`, definition.wall, definition.wallLine, 2, 2);
         const floorMaterial = cachedMaterial(`${mapId}-floor`, "#ffffff", {
@@ -513,6 +634,208 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           });
         }
 
+        if (mapId === "rooftop") {
+          const ledgeMaterial = cachedMaterial("rooftop-ledge", "#89969a", {
+            roughness: .62, metalness: .18
+          });
+          const ledgeSegments = [[4, 7], [9, 13], [15, 19], [21, 24]];
+          for (const [start, end] of ledgeSegments) {
+            for (const [x, z, length, depth] of [
+              [(start + end) / 2, -.12, end - start, .24],
+              [(start + end) / 2, -map.length + .12, end - start, .24]
+            ]) {
+              const rail = new THREE.Mesh(cachedBoxGeometry(length, .32, depth), ledgeMaterial);
+              rail.position.set(x, .12, z);
+              rail.castShadow = true;
+              mapGroup.add(rail);
+            }
+            for (const [x, z, depth, length] of [
+              [.12, -(start + end) / 2, .24, end - start],
+              [width - .12, -(start + end) / 2, .24, end - start]
+            ]) {
+              const rail = new THREE.Mesh(cachedBoxGeometry(depth, .32, length), ledgeMaterial);
+              rail.position.set(x, .12, z);
+              rail.castShadow = true;
+              mapGroup.add(rail);
+            }
+          }
+          const hvac = new THREE.Mesh(
+            cachedBoxGeometry(3, 1.6, 2),
+            cachedMaterial("rooftop-hvac", "#515c60", { roughness: .7, metalness: .38 })
+          );
+          hvac.position.set(11.5, .8, -11);
+          hvac.castShadow = true;
+          hvac.receiveShadow = true;
+          mapGroup.add(hvac);
+          mapObstacleMeshes.push(hvac);
+          const helipad = new THREE.Mesh(
+            cachedPlaneGeometry(6, 6),
+            cachedMaterial("rooftop-helipad", "#283437", { roughness: .8 })
+          );
+          helipad.rotation.x = -Math.PI / 2;
+          helipad.position.set(width * .72, .003, -depth * .72);
+          mapGroup.add(helipad);
+          const helipadMark = new THREE.Mesh(
+            new THREE.RingGeometry(1.7, 1.82, 48),
+            new THREE.MeshBasicMaterial({ color: "#d9c894", side: THREE.DoubleSide })
+          );
+          helipadMark.rotation.x = -Math.PI / 2;
+          helipadMark.position.copy(helipad.position).y += .01;
+          mapGroup.add(helipadMark);
+          const waterTankMaterial = cachedMaterial("rooftop-water-tank", "#536469", {
+            roughness: .55, metalness: .42
+          });
+          for (const [x, y] of [[4, 17], [20, 5], [19, 20]]) {
+            const tank = new THREE.Mesh(cachedCylinderGeometry(.72, .82, 1.9, 12), waterTankMaterial);
+            tank.position.set(x, .95, -y);
+            tank.castShadow = true;
+            tank.receiveShadow = true;
+            mapGroup.add(tank);
+            mapObstacleMeshes.push(tank);
+            const vent = new THREE.Mesh(cachedCylinderGeometry(.12, .12, .6, 8), waterTankMaterial);
+            vent.position.set(x, 2.2, -y);
+            mapGroup.add(vent);
+          }
+        }
+
+        if (mapId === "iron_foundry") {
+          const vatMaterial = cachedMaterial("foundry-molten", "#b94c1e", {
+            roughness: .28, metalness: .35, emissive: "#ff4a08", emissiveIntensity: 2.2
+          });
+          const vatLocations = [[12, 12], [15, 15]];
+          for (const [x, y] of vatLocations) {
+            const vat = new THREE.Mesh(
+              cachedBoxGeometry(2.4, .72, 2.4),
+              cachedMaterial("foundry-vat-rim", "#534b43", { roughness: .5, metalness: .62 })
+            );
+            vat.position.set(x, .36, -y);
+            vat.castShadow = true;
+            vat.receiveShadow = true;
+            const molten = new THREE.Mesh(
+              cachedBoxGeometry(1.9, .06, 1.9),
+              vatMaterial
+            );
+            molten.position.set(x, .76, -y);
+            mapGroup.add(vat, molten);
+            mapObstacleMeshes.push(vat, molten);
+            const light = new THREE.PointLight("#ff5a16", 4.5, 9, 2);
+            light.position.set(x, 1.1, -y);
+            mapGroup.add(light);
+            dynamicMapLights.push(light);
+            light.userData.baseIntensity = 4.5;
+          }
+          const catwalkMaterial = cachedMaterial("foundry-catwalk", "#62594c", {
+            roughness: .68, metalness: .48
+          });
+          for (const [x, y, length, depth] of [
+            [6, 14.5, 6, 1.4], [21, 14.5, 6, 1.4], [13.5, 4.5, 1.4, 5]
+          ]) {
+            const catwalk = new THREE.Mesh(cachedBoxGeometry(length, .18, depth), catwalkMaterial);
+            catwalk.position.set(x, 2, -y);
+            catwalk.castShadow = true;
+            catwalk.receiveShadow = true;
+            mapGroup.add(catwalk);
+            mapObstacleMeshes.push(catwalk);
+            for (const supportX of [x - length * .35, x + length * .35]) {
+              if (length <= depth) continue;
+              const support = new THREE.Mesh(cachedBoxGeometry(.22, 1.9, .22), catwalkMaterial);
+              support.position.set(supportX, .95, -y);
+              mapGroup.add(support);
+            }
+          }
+
+          if (mapId === "desert_outpost") {
+            const sandbagMaterial = cachedMaterial("outpost-sandbags", "#9b8052", { roughness: .98 });
+            for (const [x, y, width, depth] of [[13, 5, 4, 2], [15, 22, 4, 2]]) {
+              const barricade = new THREE.Mesh(cachedBoxGeometry(width, 1.1, depth), sandbagMaterial);
+              barricade.position.set(x, .55, -y);
+              barricade.castShadow = true;
+              barricade.receiveShadow = true;
+              mapGroup.add(barricade);
+              mapObstacleMeshes.push(barricade);
+            }
+            const watchtowerMaterial = cachedMaterial("outpost-watchtower", "#4d483b", {
+              roughness: .78, metalness: .28
+            });
+            const tower = new THREE.Group();
+            const platform = new THREE.Mesh(cachedBoxGeometry(3.2, .28, 3.2), watchtowerMaterial);
+            platform.position.y = 2.15;
+            const cabin = new THREE.Mesh(cachedBoxGeometry(2.4, 1.2, 2.4), watchtowerMaterial);
+            cabin.position.y = 3;
+            tower.add(platform, cabin);
+            for (const x of [-1.25, 1.25]) for (const z of [-1.25, 1.25]) {
+              const post = new THREE.Mesh(cachedBoxGeometry(.18, 2.2, .18), watchtowerMaterial);
+              post.position.set(x, 1.1, z);
+              tower.add(post);
+            }
+            tower.position.set(23.5, 0, -12);
+            tower.traverse(object => { if (object.isMesh) object.castShadow = true; });
+            mapGroup.add(tower);
+            mapObstacleMeshes.push(tower.children[0], tower.children[1]);
+            const crateMaterial = cachedMaterial("outpost-crates", "#64513a", { roughness: .9 });
+            for (const [x, y, rotation] of [[4, 14, .2], [23, 16, -.35], [5, 18, .5]]) {
+              const crate = new THREE.Mesh(cachedBoxGeometry(1.2, .9, 1.1), crateMaterial);
+              crate.position.set(x, .45, -y);
+              crate.rotation.y = rotation;
+              crate.castShadow = true;
+              mapGroup.add(crate);
+              mapObstacleMeshes.push(crate);
+            }
+            [[6, 5], [22, 22]].forEach(([x, y], index) => {
+              const light = new THREE.PointLight(index ? "#ff9d58" : "#ffd58a", 1.5, 8, 2);
+              light.position.set(x, 2.8, -y);
+              mapGroup.add(light);
+              dynamicMapLights.push(light);
+              light.userData.baseIntensity = 1.5;
+            });
+          }
+
+          if (mapId === "subway_terminal") {
+            const pillarMaterial = cachedMaterial("subway-pillar", "#525c5a", {
+              roughness: .7, metalness: .34
+            });
+            for (const x of [10.75, 16.25]) {
+              const pillar = new THREE.Mesh(cachedBoxGeometry(1.5, 2.2, 7), pillarMaterial);
+              pillar.position.set(x, 1.1, -13.5);
+              pillar.castShadow = true;
+              pillar.receiveShadow = true;
+              mapGroup.add(pillar);
+              mapObstacleMeshes.push(pillar);
+            }
+            const benchMaterial = cachedMaterial("subway-bench", "#35423f", {
+              roughness: .46, metalness: .5
+            });
+            for (const [x, y] of [[13, 7.5], [14, 19.5]]) {
+              const bench = new THREE.Mesh(cachedBoxGeometry(4, .55, .9), benchMaterial);
+              bench.position.set(x, .48, -y);
+              bench.castShadow = true;
+              mapGroup.add(bench);
+              mapObstacleMeshes.push(bench);
+            }
+            const trackMaterial = cachedMaterial("subway-track", "#252a28", {
+              roughness: .36, metalness: .72
+            });
+            for (const x of [12, 14, 16]) {
+              const rail = new THREE.Mesh(cachedBoxGeometry(.14, .12, depth - 3), trackMaterial);
+              rail.position.set(x, .02, -depth / 2);
+              mapGroup.add(rail);
+            }
+            const tileMaterial = cachedMaterial("subway-platform-tile", "#a9a18b", { roughness: .78 });
+            for (const y of [8.5, 18.5]) {
+              const warningStrip = new THREE.Mesh(cachedBoxGeometry(10, .025, .24), tileMaterial);
+              warningStrip.position.set(width / 2, .01, -y);
+              mapGroup.add(warningStrip);
+            }
+            for (const [x, y, color] of [[5, 5, "#4ac6c1"], [21, 22, "#f2ae61"], [21, 5, "#5bb9db"]]) {
+              const lamp = new THREE.PointLight(color, 2.1, 10, 2);
+              lamp.position.set(x, 3.1, -y);
+              mapGroup.add(lamp);
+              dynamicMapLights.push(lamp);
+              lamp.userData.baseIntensity = 2.1;
+            }
+          }
+        }
+
         const fixtureMaterial = cachedMaterial(`${mapId}-fixture`, definition.outdoor ? "#45443b" : "#242a23", {
           metalness: .48, roughness: .42
         });
@@ -531,7 +854,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             diffuser.position.set(x + .5, height - .06, -y - .5);
             mapGroup.add(diffuser);
             const light = new THREE.PointLight(definition.lightColor,
-              mapId === "arena" && lightIndex === 0 ? 2.2 : mapId === "pool" ? 1.05 : 1.25,
+              mapId === "arena" && lightIndex === 0 ? 2.2 : mapId === "pool" ? 1.05 :
+                mapId === "iron_foundry" ? .55 : 1.25,
               mapId === "battlefield" ? 10 : 8, 2);
             light.position.set(x + .5, height - .35, -y - .5);
             light.userData.flicker = mapId === "pool" || mapId === "battlefield";
@@ -562,13 +886,27 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         if (width < 3 || definition.grid.some(row =>
           typeof row !== "string" || row.length !== width || /[^01]/.test(row)
         )) throw new Error(`Map "${mapId}" has an invalid collision grid.`);
+        const dimensions = definition.dimensions || { width, depth: definition.grid.length };
+        if (dimensions.width !== width || dimensions.depth !== definition.grid.length) {
+          throw new Error(`Map "${mapId}" has collision dimensions that do not match its grid.`);
+        }
+        for (const box of definition.collisionBoxes || []) {
+          if (![box.minX, box.maxX, box.minY, box.maxY, box.minHeight, box.maxHeight].every(Number.isFinite) ||
+            box.minX < 0 || box.minY < 0 || box.maxX > width || box.maxY > definition.grid.length ||
+            box.minX >= box.maxX || box.minY >= box.maxY || box.minHeight > box.maxHeight) {
+            throw new Error(`Map "${mapId}" has an invalid obstacle collision box.`);
+          }
+        }
+        const validMapPoint = (x, y) => Number.isFinite(x) && Number.isFinite(y) &&
+          x >= .24 && y >= .24 && x <= width - .24 && y <= definition.grid.length - .24 &&
+          canOccupyOnMap(definition.grid, x, y, .24);
         const validPosition = position => position?.isVector3 &&
           Number.isFinite(position.x) && Number.isFinite(position.y) &&
           Number.isFinite(position.z) && Math.abs(position.y) < .001 &&
-          canOccupyOnMap(definition.grid, position.x, -position.z, .24);
-        if (!definition.spawnPoints.some(validPosition) ||
-          !definition.enemySpawns.some(validPosition) ||
-          !canOccupyOnMap(definition.grid, definition.spawn.x, definition.spawn.y, .24)) {
+          validMapPoint(position.x, -position.z);
+        if (!definition.spawnPoints?.some(validPosition) ||
+          !definition.enemySpawns?.some(validPosition) ||
+          !validMapPoint(definition.spawn?.x, definition.spawn?.y)) {
           throw new Error(`Map "${mapId}" is missing valid player or enemy spawn nodes.`);
         }
         if (!definition.grid.some(row => row.includes("1")) ||
@@ -578,7 +916,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         return definition;
       }
 
-      function loadMap(mapId) {
+      function loadMap(requestedMapId) {
+        const mapId = requestedMapId === "foundry" ? "iron_foundry" : requestedMapId;
         const definition = validateMapDefinition(mapId);
         vfxSystem.clearDecals();
         activeMapId = mapId;
@@ -589,7 +928,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         mapGroup.name = `map-${mapId}`;
         scene.add(mapGroup);
         scene.background = new THREE.Color(definition.background);
-        scene.fog = new THREE.Fog(definition.fog, 12, mapId === "battlefield" ? 42 : 34);
+        scene.fog = new THREE.Fog(
+          definition.fog, definition.fogNear ?? 12, definition.fogFar ?? (mapId === "battlefield" ? 42 : 34)
+        );
         sunLight.target.position.set(map[0].length / 2, 0, -map.length / 2);
         sunLight.position.set(map[0].length / 2 - 5, 12, -map.length / 2 + 7);
         sunLight.shadow.camera.left = -map[0].length * .65;
@@ -709,6 +1050,58 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           weaponAnchor.add(holder);
           return holder;
         });
+        const hands = new THREE.Group();
+        const sleeveMaterial = new THREE.MeshBasicMaterial({ color: "#29312b", toneMapped: false });
+        const gloveMaterial = new THREE.MeshBasicMaterial({ color: "#39423b", toneMapped: false });
+        const makeArm = (position, angle) => {
+          const arm = new THREE.Group();
+          const sleeve = new THREE.Mesh(cachedCylinderGeometry(.045, .065, .24, 10), sleeveMaterial);
+          sleeve.rotation.z = angle;
+          sleeve.position.set(...position);
+          sleeve.castShadow = true;
+          const wrist = new THREE.Mesh(new THREE.SphereGeometry(.055, 10, 8), gloveMaterial);
+          wrist.position.set(position[0] - Math.sin(angle) * .12, position[1] + Math.cos(angle) * .12, position[2]);
+          wrist.scale.set(1.05, .72, 1.15);
+          wrist.castShadow = true;
+          arm.add(sleeve, wrist);
+          return { arm, wrist };
+        };
+        const rightArm = makeArm([.05, -.02, -.08], .58);
+        const leftArm = makeArm([-.25, -.02, -.22], -.62);
+        const makeHand = () => {
+          const hand = new THREE.Group();
+          const palm = new THREE.Mesh(cachedBoxGeometry(.12, .055, .12), gloveMaterial);
+          palm.castShadow = true;
+          hand.add(palm);
+          for (let finger = 0; finger < 4; finger++) {
+            const digit = new THREE.Mesh(cachedBoxGeometry(.025, .025, .08), gloveMaterial);
+            digit.position.set(-.043 + finger * .029, -.012, -.085);
+            digit.castShadow = true;
+            hand.add(digit);
+          }
+          const thumb = new THREE.Mesh(cachedBoxGeometry(.035, .035, .07), gloveMaterial);
+          thumb.position.set(.07, -.005, -.025);
+          thumb.rotation.y = -.45;
+          thumb.castShadow = true;
+          hand.add(thumb);
+          return hand;
+        };
+        const rightHand = makeHand();
+        rightHand.position.set(0, .01, .02);
+        const leftHand = makeHand();
+        leftHand.position.set(-.04, .01, -.25);
+        const triggerFinger = new THREE.Mesh(cachedBoxGeometry(.025, .02, .07), gloveMaterial);
+        triggerFinger.position.set(.04, -.01, -.05);
+        triggerFinger.castShadow = true;
+        hands.add(rightArm.arm, leftArm.arm, rightHand, leftHand, triggerFinger);
+        hands.userData.rightHand = rightHand;
+        hands.userData.triggerFinger = triggerFinger;
+        hands.userData.leftHand = leftHand;
+        hands.userData.leftHandRest = leftHand.position.clone();
+        hands.userData.leftArm = leftArm.arm;
+        hands.userData.rightArm = rightArm.arm;
+        weaponAnchor.add(hands);
+        viewmodelHands = hands;
         weaponAssetLoader.loadAll().then(() => {
           weaponModels.forEach((holder, index) => {
             const model = weaponAssetLoader.createInstance(index);
@@ -728,6 +1121,10 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             applyWeaponAttachments(index);
           });
           applyWeaponCamo();
+          enemyModels.forEach(model => {
+            if (model.userData.rigged) model.userData.weaponIndex = -1;
+          });
+          if (playerRigModel) playerRigModel.userData.weaponIndex = -1;
         });
       }
       const player = new Player(mapDefinitions[activeMapId].spawn);
@@ -745,6 +1142,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       let boss = null;
       let playerFlashTimer = 0;
       let playerFlashFadeTimer = 0;
+      let playerFlashFadeIn = 0;
+      let playerFlashOpacity = 0;
       let waveFiveDropSpawned = false;
       let waveRewardsAwarded = new Set();
       let nextEnemyId = 0, killStreak = 0;
@@ -757,7 +1156,10 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       let reloadDuration = 0;
       let firing = false, aiming = false, toastTimeout = 0, knifeSwing = 0, movementBob = 0;
       let weaponRecoil = 0, recoilPitch = 0, recoilYaw = 0, weaponLagX = 0, dashTimer = 0, dashCooldown = 0;
-      let stamina = 100, jumpHeight = 0, jumpVelocity = 0, bunnyHopMultiplier = 1, cameraKickback = 0;
+      let stamina = 100, sprintExhausted = false, jumpHeight = 0, jumpVelocity = 0,
+        bunnyHopMultiplier = 1, cameraKickback = 0;
+      let rooftopFallHeight = 0, rooftopFallVelocity = 0, rooftopFalling = false;
+      let playerAnimationState = "idle";
       const inspectDuration = 1.45;
       let inspectTimer = 0;
       let dashDirectionX = 0, dashDirectionY = 0;
@@ -840,7 +1242,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         masterVolume.value = controlSettings.masterVolume;
         document.querySelector("#sensitivity-value").value = `${controlSettings.mouseSensitivity.toFixed(2)}x`;
         document.querySelector("#scope-sensitivity-value").value = `${controlSettings.scopeSensitivity.toFixed(2)}x`;
-        document.querySelector("#fov-value").value = `${controlSettings.fieldOfView}°`;
+        document.querySelector("#fov-value").value = `${controlSettings.fieldOfView} deg`;
         document.querySelector("#volume-value").value = `${Math.round(controlSettings.masterVolume * 100)}%`;
         audioManager.setMasterVolume(controlSettings.masterVolume);
       }
@@ -1182,6 +1584,10 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         stamina = 100;
         jumpHeight = 0;
         jumpVelocity = 0;
+        rooftopFallHeight = 0;
+        rooftopFallVelocity = 0;
+        rooftopFalling = false;
+        playerAnimationState = "idle";
         bunnyHopMultiplier = 1;
         cameraKickback = 0;
         inspectTimer = 0;
@@ -1318,7 +1724,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         if (resultSubmitted) return;
         resultSubmitted = true;
         const status = document.querySelector("#leaderboard-status");
-        status.textContent = "Saving match result…";
+        status.textContent = "Saving match result...";
         try {
           const response = await fetch(`${leaderboardApi}/leaderboard`, {
             method: "POST",
@@ -1456,7 +1862,12 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           type: "state",
           x: player.x,
           y: player.y,
-          position: { x: player.x, y: 1.65 + jumpHeight - (dashTimer > 0 ? .22 : 0), z: -player.y },
+          position: {
+            x: player.x,
+            y: 1.65 + getMapElevation(player.x, player.y) + rooftopFallHeight +
+              jumpHeight - (dashTimer > 0 ? .22 : 0),
+            z: -player.y
+          },
           angle: player.angle,
           pitch: playerPitch,
           cameraDirection: {
@@ -1472,6 +1883,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           skin: equippedSkin,
           camo: equippedCamo,
           weapon: player.weaponIndex,
+          animationState: playerAnimationState,
           mapId: activeMapId,
           firing
         }));
@@ -1860,10 +2272,10 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             for (const enemy of [...enemies]) {
               if (gameMode === "tdm" && enemy.team !== 1) continue;
               const distanceToBlast = Math.hypot(enemy.x - impactX, enemy.y - impactY);
-              if (distanceToBlast > 6.2) continue;
+              if (distanceToBlast > 7.4) continue;
               if (castRayFrom(enemy.x, enemy.y, Math.atan2(impactY - enemy.y, impactX - enemy.x)).distance <
                 distanceToBlast - .25) continue;
-              enemy.health -= 220 * Math.max(.12, 1 - distanceToBlast / 6.2);
+              enemy.health -= 250 * Math.max(.12, 1 - distanceToBlast / 7.4);
               if (enemy.health <= 0) eliminateEnemy(enemy, { weaponIndex: player.weaponIndex });
             }
             setCombatMessage("FRAG DETONATED");
@@ -1962,6 +2374,42 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           return muzzle.getWorldPosition(new THREE.Vector3());
         }
         return camera.position.clone();
+      }
+
+      function getPlayerMuzzleWorldDirection() {
+        const muzzle = weaponMuzzles[player.weaponIndex];
+        if (muzzle) {
+          muzzle.updateWorldMatrix(true, false);
+          return new THREE.Vector3(0, 0, -1).transformDirection(muzzle.matrixWorld).normalize();
+        }
+        return camera.getWorldDirection(new THREE.Vector3()).normalize();
+      }
+
+      function getEnemyMuzzleWorldTransform(enemy) {
+        const model = enemyModels.get(enemy);
+        const muzzle = model?.userData.weaponMuzzle;
+        if (muzzle) {
+          model.updateWorldMatrix(true, true);
+          return {
+            position: muzzle.getWorldPosition(new THREE.Vector3()),
+            direction: new THREE.Vector3(0, 0, -1).transformDirection(muzzle.matrixWorld).normalize()
+          };
+        }
+        const weapon = model?.userData.weapons?.children[enemy.weaponIndex];
+        const barrel = weapon?.getObjectByName("bot-weapon-barrel");
+        if (barrel) {
+          model.updateWorldMatrix(true, true);
+          const direction = new THREE.Vector3(0, 0, -1).transformDirection(barrel.matrixWorld).normalize();
+          barrel.geometry.computeBoundingBox();
+          const barrelSize = barrel.geometry.boundingBox.getSize(new THREE.Vector3());
+          const position = barrel.localToWorld(new THREE.Vector3(0, 0, -barrelSize.z / 2));
+          return { position, direction };
+        }
+        const angle = enemy.faceAngle || 0;
+        return {
+          position: new THREE.Vector3(enemy.x, 1.2 + (enemy.fallHeight || 0), -enemy.y),
+          direction: new THREE.Vector3(Math.cos(angle), 0, -Math.sin(angle))
+        };
       }
 
       function isWaveMode() {
@@ -2080,7 +2528,15 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function wallAt(x, y) {
         const mx = Math.floor(x), my = Math.floor(y);
-        return my < 0 || mx < 0 || my >= map.length || mx >= map[my].length || map[my][mx] === "1";
+        const outside = my < 0 || mx < 0 || my >= map.length || mx >= map[my].length;
+        if (outside) return activeMapId !== "rooftop";
+        const definition = mapDefinitions[activeMapId];
+        const elevation = getMapElevation(x, y);
+        const insideBox = (definition.collisionBoxes || []).some(box =>
+          x >= box.minX && x < box.maxX && y >= box.minY && y < box.maxY &&
+          elevation < box.maxHeight && elevation + 1.8 > box.minHeight
+        );
+        return (map[my][mx] === "1" && elevation === 0) || insideBox;
       }
 
       function canOccupy(x, y, radius) {
@@ -2092,10 +2548,33 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         player.move(dx, dy, canOccupy);
       }
 
+      function getMapElevation(x, y, mapId = activeMapId) {
+        const zone = (mapDefinitions[mapId].elevationZones || []).find(area =>
+          x >= area.minX && x <= area.maxX && y >= area.minY && y <= area.maxY
+        );
+        return zone?.height || 0;
+      }
+
+      function getEnvironmentalDamage(x, y) {
+        return (mapDefinitions[activeMapId].hazards || [])
+          .filter(area => x >= area.minX && x <= area.maxX && y >= area.minY && y <= area.maxY)
+          .reduce((damage, area) => damage + area.damagePerSecond, 0);
+      }
+
       function canOccupyOnMap(grid, x, y, radius) {
+        if (![x, y, radius].every(Number.isFinite) || radius < 0) return false;
+        const mapId = Object.keys(mapDefinitions).find(id => mapDefinitions[id].grid === grid);
+        const definition = mapId ? mapDefinitions[mapId] : null;
         const wall = (px, py) => {
           const mx = Math.floor(px), my = Math.floor(py);
-          return my < 0 || mx < 0 || my >= grid.length || mx >= grid[my].length || grid[my][mx] !== "0";
+          const outside = my < 0 || mx < 0 || my >= grid.length || mx >= grid[my].length;
+          if (outside) return mapId !== "rooftop";
+          const elevation = getMapElevation(px, py, mapId);
+          const blockedByBox = (definition?.collisionBoxes || []).some(box =>
+            px >= box.minX && px < box.maxX && py >= box.minY && py < box.maxY &&
+            elevation < box.maxHeight && elevation + 1.8 > box.minHeight
+          );
+          return (grid[my][mx] !== "0" && elevation === 0) || blockedByBox;
         };
         return !wall(x - radius, y - radius) && !wall(x + radius, y - radius) &&
           !wall(x - radius, y + radius) && !wall(x + radius, y + radius);
@@ -2144,7 +2623,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         grenadeAim = false;
         updateInspectControl();
         updateAimHud();
-        setCombatMessage("INSPECTING · PRESS F OR TAP CANCEL · ESC TO PAUSE", inspectDuration * 1000);
+        setCombatMessage("INSPECTING / PRESS F OR TAP CANCEL / ESC TO PAUSE", inspectDuration * 1000);
       }
 
       function updateInspectControl() {
@@ -2340,7 +2819,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
               : /torso|vest|pouch/i.test(object.name) ? "chest" : "limb";
           }
         });
-        group.scale.setScalar(enemy.type === "boss" ? 1.72 : enemy.type === "brute" ? 1.28 : 1);
+        group.scale.setScalar(enemy.type === "boss" ? 1.72 : enemy.type === "brute" ? 1.42 : 1.2);
         scene.add(group);
         enemyModels.set(enemy, group);
         return group;
@@ -2354,7 +2833,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         });
         const findBone = pattern => bones.find(bone => pattern.test(bone.name));
         const handSocket = findBone(/^Hand_R$/i) ||
-          findBone(/^(?:hand_r|mixamorigrightHand|right[_ -]?hand)$/i);
+          findBone(/^(?:hand_r|mixamorigrightHand|right[_ -]?hand|wristr)$/i);
         if (!handSocket) {
           if (!warnedMissingHandSocket) {
             warnedMissingHandSocket = true;
@@ -2362,7 +2841,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           }
           return null;
         }
-        model.scale.setScalar(enemy.type === "brute" ? 1.15 : .9);
+        model.scale.setScalar(enemy.type === "brute" ? 1.4 : 1.18);
         const teamMaterial = cachedMaterial("rigged-enemy-uniform", "#59634d", { roughness: .88 });
         model.traverse(object => {
           if (!object.isMesh) return;
@@ -2393,15 +2872,61 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         addBoneHitbox(findBone(/leftupleg|rightupleg|thigh_[lr]/i), "limb", .14);
 
         const animationMixer = new THREE.AnimationMixer(model);
-        const movementClip = enemyRigAnimations.find(clip => /run|walk|move/i.test(clip.name)) || enemyRigAnimations[0];
-        if (movementClip) animationMixer.clipAction(movementClip).play();
+        const clipForState = {
+          idle: enemyRigAnimations.find(clip => /idle|stand|breath/i.test(clip.name)),
+          walk: enemyRigAnimations.find(clip => /walk|move/i.test(clip.name)),
+          run: enemyRigAnimations.find(clip => /run|sprint/i.test(clip.name)),
+          shoot: enemyRigAnimations.find(clip => /shoot|fire|attack/i.test(clip.name)),
+          reload: enemyRigAnimations.find(clip => /reload/i.test(clip.name))
+        };
+        const animationActions = {};
+        for (const [state, clip] of Object.entries(clipForState)) {
+          if (clip) animationActions[state] = animationMixer.clipAction(clip);
+        }
         model.userData.rigged = true;
         model.userData.mixer = animationMixer;
+        model.userData.animationActions = animationActions;
+        model.userData.animationState = "";
         model.userData.weaponHand = handSocket;
         model.userData.weaponIndex = -1;
+        model.userData.aimBones = [
+          findBone(/upperarm_l|leftarm|arm_l/i),
+          findBone(/upperarm_r|rightarm|arm_r/i)
+        ].filter(Boolean).map(bone => ({ bone, restRotationX: bone.rotation.x }));
         scene.add(model);
         enemyModels.set(enemy, model);
+        setRigAnimation(model, enemy.animationState || "idle");
         return model;
+      }
+
+      function setRigAnimation(model, state) {
+        const actions = model.userData.animationActions;
+        if (!actions) return;
+        const selectedState = actions[state] ? state
+          : state === "run" && actions.walk ? "walk"
+            : state === "walk" && actions.run ? "run"
+              : actions.idle ? "idle" : actions.walk ? "walk" : actions.run ? "run"
+                : Object.keys(actions)[0];
+        const nextAction = actions[selectedState];
+        if (!nextAction) return;
+        if (model.userData.animationState === selectedState) {
+          if ((selectedState === "shoot" || selectedState === "reload") && !nextAction.isRunning()) {
+            nextAction.reset().play();
+          }
+          return;
+        }
+        const previousAction = actions[model.userData.animationState];
+        const oneShot = selectedState === "shoot" || selectedState === "reload";
+        nextAction.reset();
+        nextAction.setLoop(oneShot ? THREE.LoopOnce : THREE.LoopRepeat, oneShot ? 1 : Infinity);
+        nextAction.clampWhenFinished = oneShot;
+        nextAction.play();
+        if (previousAction && previousAction !== nextAction) {
+          previousAction.crossFadeTo(nextAction, .16, true);
+        } else {
+          nextAction.fadeIn(.16);
+        }
+        model.userData.animationState = selectedState;
       }
 
       function updateRiggedWeapon(model, enemy) {
@@ -2411,19 +2936,29 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         model.userData.weaponModel = weapon;
         model.userData.weaponIndex = weapon ? enemy.weaponIndex : -1;
         if (!weapon) return;
-        const handTransform = weaponAssetLoader.getHandOffset(enemy.weaponIndex);
-        weapon.position.set(...handTransform.position);
-        weapon.rotation.set(...handTransform.rotation);
-        weapon.scale.multiplyScalar(handTransform.scale);
+        const handOffset = weaponAssetLoader.getHandOffset(enemy.weaponIndex);
+        weapon.position.set(...handOffset.position);
+        weapon.rotation.set(...handOffset.rotation);
+        weapon.scale.setScalar(handOffset.scale);
         weapon.userData.isWeapon = true;
+        weapon.traverse(object => {
+          object.userData.isWeapon = true;
+          object.userData.enemyRef = enemy;
+        });
         model.userData.weaponHand.add(weapon);
+        model.userData.weaponMuzzle = weaponAssetLoader.getMuzzle(weapon, enemy.weaponIndex);
       }
 
       function loadEnemyRig() {
-        const source = new URL("assets/characters/soldier.glb", document.baseURI).href;
-        new GLTFLoader().load(source, gltf => {
-          enemyRigTemplate = gltf.scene;
-          enemyRigAnimations = gltf.animations || [];
+        weaponAssetLoader.loadCharacter().then(character => {
+          if (!character) return;
+          enemyRigTemplate = character.model;
+          enemyRigAnimations = character.animations;
+          if (playerRigModel) {
+            scene.remove(playerRigModel);
+            playerRigModel = null;
+            playerRigActor = null;
+          }
           releaseRemoteModel();
           if (replayPlayerModel) {
             scene.remove(replayPlayerModel);
@@ -2434,12 +2969,31 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             scene.remove(model);
             enemyModels.delete(enemy);
           }
-        }, undefined, error => {
-          if (error?.target?.status !== 404) console.warn(`Could not load optional enemy rig ${source}; using procedural bots.`, error);
+          playerRigActor = {
+            type: "soldier", weaponIndex: player.weaponIndex, health: 100,
+            phase: 0, stunned: 0, animationState: "idle"
+          };
+          playerRigModel = createRiggedEnemyModel(playerRigActor);
+          if (playerRigModel) {
+            enemyModels.delete(playerRigActor);
+            playerRigModel.visible = false;
+          }
+        }).catch(error => {
+          console.error("Character rig loading failed unexpectedly; using procedural characters.", error);
         });
       }
 
       function updateEnemyModels(dt = 0) {
+        if (playerRigModel && playerRigActor) {
+          playerRigActor.weaponIndex = player.weaponIndex;
+          playerRigActor.animationState = playerAnimationState;
+          playerRigModel.position.set(player.x, getMapElevation(player.x, player.y) + rooftopFallHeight, -player.y);
+          playerRigModel.rotation.y = player.angle - Math.PI / 2;
+          playerRigModel.userData.mixer.update(dt);
+          setRigAnimation(playerRigModel, playerAnimationState);
+          updateRiggedWeapon(playerRigModel, playerRigActor);
+          playerRigModel.visible = false;
+        }
         const liveEnemies = new Set(enemies);
         for (const [enemy, model] of enemyModels) {
           if (liveEnemies.has(enemy)) continue;
@@ -2466,21 +3020,29 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           }
           const faceAngle = Number.isFinite(enemy.faceAngle) ? enemy.faceAngle : Math.atan2(player.y - enemy.y, player.x - enemy.x);
           model.rotation.y = faceAngle - Math.PI / 2;
+          model.position.y = (enemy.fallHeight || 0) + getMapElevation(enemy.x, enemy.y);
           if (model.userData.rigged) {
             model.userData.mixer.update(dt);
+            setRigAnimation(model, enemy.animationState || "idle");
+            if (!model.userData.animationActions.shoot) {
+              model.userData.aimBones.forEach(({ bone, restRotationX }, index) => {
+                bone.rotation.x = restRotationX + (enemy.aiming ? index === 0 ? -.35 : .42 : 0);
+              });
+            }
             updateRiggedWeapon(model, enemy);
             model.visible = enemy.health > 0;
             continue;
           }
           const gait = enemy.stunned > 0 ? 0 : Math.sin(enemy.phase) * .55;
+          const aimPose = enemy.aiming ? 1 : 0;
           model.userData.leftLeg.rotation.x = gait;
           model.userData.rightLeg.rotation.x = -gait;
           model.userData.leftKnee.rotation.x = Math.max(0, -gait) * .8;
           model.userData.rightKnee.rotation.x = Math.max(0, gait) * .8;
-          model.userData.leftArm.rotation.x = -gait * .55;
-          model.userData.rightArm.rotation.x = gait * .55;
-          model.userData.leftElbow.rotation.x = -.3 + Math.max(0, gait) * .35;
-          model.userData.rightElbow.rotation.x = -.3 - Math.max(0, gait) * .35;
+          model.userData.leftArm.rotation.x = -.7 * aimPose - gait * .3;
+          model.userData.rightArm.rotation.x = .8 * aimPose + gait * .3;
+          model.userData.leftElbow.rotation.x = -.65 * aimPose + Math.max(0, gait) * .2;
+          model.userData.rightElbow.rotation.x = -.8 * aimPose - Math.max(0, gait) * .2;
           model.userData.weapons.children.forEach((weapon, index) => { weapon.visible = index === enemy.weaponIndex; });
           model.visible = enemy.health > 0;
         }
@@ -2545,18 +3107,20 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const remoteEnemy = model.userData.remoteEnemy;
         remoteEnemy.health = remotePlayer.health;
         remoteEnemy.weaponIndex = Math.max(0, Math.min(weapons.length - 1, Math.trunc(remotePlayer.weapon || 0)));
+        remoteEnemy.aiming = Boolean(remotePlayer.firing);
         if (model.userData.rigged) {
           model.userData.mixer.update(dt);
+          setRigAnimation(model, remotePlayer.animationState || (remotePlayer.firing ? "shoot" : distance > .005 ? "walk" : "idle"));
           updateRiggedWeapon(model, remoteEnemy);
         } else {
           model.userData.leftLeg.rotation.x = gait;
           model.userData.rightLeg.rotation.x = -gait;
           model.userData.leftKnee.rotation.x = Math.max(0, -gait) * .8;
           model.userData.rightKnee.rotation.x = Math.max(0, gait) * .8;
-          model.userData.leftArm.rotation.x = -gait * .55;
-          model.userData.rightArm.rotation.x = gait * .55;
-          model.userData.leftElbow.rotation.x = -.3 + Math.max(0, gait) * .35;
-          model.userData.rightElbow.rotation.x = -.3 - Math.max(0, gait) * .35;
+          model.userData.leftArm.rotation.x = (remoteEnemy.aiming ? -.7 : 0) - gait * .3;
+          model.userData.rightArm.rotation.x = (remoteEnemy.aiming ? .8 : 0) + gait * .55;
+          model.userData.leftElbow.rotation.x = (remoteEnemy.aiming ? -.65 : 0) + Math.max(0, gait) * .35;
+          model.userData.rightElbow.rotation.x = (remoteEnemy.aiming ? -.8 : -.3) - Math.max(0, gait) * .35;
           model.userData.weapons.children.forEach((weapon, index) => {
             weapon.visible = index === remoteEnemy.weaponIndex;
           });
@@ -2770,7 +3334,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         hud.hidden = !sukunaActive;
         if (sukunaActive) {
           hud.textContent =
-            `SUKUNA'S FINGER / ${sukunaWavesRemaining} WAVES LEFT · M1 SLASH · Q CLEAVE / DISMANTLE · F FUGA · X DOMAIN`;
+            `SUKUNA'S FINGER / ${sukunaWavesRemaining} WAVES LEFT / M1 SLASH / Q CLEAVE / DISMANTLE / F FUGA / X DOMAIN`;
         }
         const touchLabels = [
           ["#touch-aim", sukunaActive ? "CLEAVE" : "AIM"],
@@ -3033,7 +3597,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             health: 100, maxHealth: 100, trainingDummy: true, phase: 0, weaponIndex: 0
           }));
           document.querySelector("#wave").textContent = "TRAINING";
-          document.querySelector("#objective").textContent = "Shoot targets · E collects drops · F inspects";
+          document.querySelector("#objective").textContent = "Shoot targets / E collects drops / F inspects";
           return;
         }
         for (let i = 0; i < count; i++) {
@@ -3101,7 +3665,12 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         for (let i = 0; i < 40; i++) {
           if (sideX < sideY) { sideX += deltaX; mapX += stepX; side = 0; }
           else { sideY += deltaY; mapY += stepY; side = 1; }
-          if (mapY < 0 || mapX < 0 || mapY >= map.length || mapX >= map[0].length || map[mapY][mapX] === "1") {
+          const outside = mapY < 0 || mapX < 0 || mapY >= map.length || mapX >= map[0].length;
+          const obstacleBox = !outside && (mapDefinitions[activeMapId].collisionBoxes || []).some(box =>
+            mapX < box.maxX && mapX + 1 > box.minX &&
+            mapY < box.maxY && mapY + 1 > box.minY
+          );
+          if (outside || map[mapY][mapX] === "1" || obstacleBox) {
             const distance = Math.max(.001, side === 0 ? sideX - deltaX : sideY - deltaY);
             const hitPosition = side === 0 ? originY + distance * rayY : originX + distance * rayX;
             return { distance, side, mapX, mapY, rayX, rayY, wallU: hitPosition - Math.floor(hitPosition) };
@@ -3177,7 +3746,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         grenadeArc.visible = true;
       }
 
-      function updateReplayGhosts(sample) {
+      function updateReplayGhosts(sample, dt) {
         enemyModels.forEach(model => { model.visible = !sample; });
         const replayEnemies = sample?.enemies.filter(enemy =>
           enemy.id !== (replayPerspective === "remote" ? "opponent" : "local-player")
@@ -3185,29 +3754,55 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         for (const [id, ghost] of replayGhosts) {
           if (replayEnemies.some(enemy => enemy.id === id)) continue;
           scene.remove(ghost);
-          ghost.traverse(object => object.geometry?.dispose());
+          ghost.traverse(object => {
+            if (!object.userData.replayBaseMaterial) return;
+            const materials = Array.isArray(object.material) ? object.material : [object.material];
+            materials.forEach(material => material?.dispose());
+          });
           replayGhosts.delete(id);
         }
         if (!sample) return;
-        if (!replayGhostMaterial) {
-          replayGhostMaterial = new THREE.MeshBasicMaterial({ color: "#b9d690", transparent: true, opacity: .48 });
-        }
         for (const enemy of replayEnemies) {
           let ghost = replayGhosts.get(enemy.id);
           if (!ghost) {
-            ghost = new THREE.Group();
-            const torso = new THREE.Mesh(new THREE.BoxGeometry(.48, .72, .28), replayGhostMaterial);
-            torso.position.y = 1.08;
-            const head = new THREE.Mesh(new THREE.SphereGeometry(.2, 10, 8), replayGhostMaterial);
-            head.position.y = 1.62;
-            const legs = new THREE.Mesh(new THREE.BoxGeometry(.34, .68, .2), replayGhostMaterial);
-            legs.position.y = .39;
-            ghost.add(torso, head, legs);
-            scene.add(ghost);
+            const actor = {
+              type: "soldier", weaponIndex: enemy.weapon || 0, health: 100,
+              phase: 0, stunned: 0, animationState: enemy.animationState || "idle"
+            };
+            ghost = createEnemyModel(actor);
+            enemyModels.delete(actor);
+            ghost.userData.replayActor = actor;
+            ghost.traverse(object => {
+              if (!object.isMesh || object.userData.isHitbox) return;
+              object.userData.replayBaseMaterial = object.material;
+              const tint = () => new THREE.MeshBasicMaterial({
+                  color: "#b9d690", transparent: true, opacity: .48,
+                  depthWrite: false, side: THREE.DoubleSide
+                });
+              object.material = Array.isArray(object.material)
+                ? object.material.map(tint)
+                : tint(object.material);
+            });
             replayGhosts.set(enemy.id, ghost);
           }
-          ghost.position.set(enemy.x, 0, -enemy.y);
-          ghost.rotation.y = (enemy.angle || 0) - Math.PI / 2;
+          const actor = ghost.userData.replayActor;
+          actor.weaponIndex = Math.max(0, Math.min(weapons.length - 1, Math.trunc(enemy.weapon || 0)));
+          actor.animationState = enemy.animationState || "idle";
+          ghost.position.set(enemy.x, enemy.position?.y || 0, -enemy.y);
+          ghost.rotation.set(
+            enemy.rotation?.x || 0,
+            Number.isFinite(enemy.rotation?.y) ? enemy.rotation.y : (enemy.angle || 0) - Math.PI / 2,
+            enemy.rotation?.z || 0
+          );
+          if (ghost.userData.rigged) {
+            ghost.userData.mixer.update(dt);
+            setRigAnimation(ghost, actor.animationState);
+            updateRiggedWeapon(ghost, actor);
+          } else {
+            ghost.userData.weapons.children.forEach((weapon, index) => {
+              weapon.visible = index === actor.weaponIndex;
+            });
+          }
         }
       }
 
@@ -3234,16 +3829,22 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         }
         const subject = sample.player;
         replayPlayerActor.weaponIndex = Math.max(0, Math.min(weapons.length - 1, Math.trunc(subject.weapon || 0)));
+        replayPlayerActor.animationState = subject.animationState || "idle";
         replayPlayerActor.health = 100;
         const model = replayPlayerModel;
         const previous = model.userData.lastPosition;
         const distance = previous ? Math.hypot(subject.x - previous.x, subject.y - previous.y) : 0;
         replayPlayerActor.phase += distance * 10;
-        model.position.set(subject.x, 0, -subject.y);
-        model.rotation.y = subject.angle - Math.PI / 2;
+        model.position.set(subject.x, subject.position?.y || 0, -subject.y);
+        model.rotation.set(
+          subject.rotation?.x || 0,
+          Number.isFinite(subject.rotation?.y) ? subject.rotation.y : subject.angle - Math.PI / 2,
+          subject.rotation?.z || 0
+        );
         model.userData.lastPosition = { x: subject.x, y: subject.y };
         if (model.userData.rigged) {
           model.userData.mixer.update(dt);
+          setRigAnimation(model, replayPlayerActor.animationState);
           updateRiggedWeapon(model, replayPlayerActor);
         } else {
           const gait = Math.sin(replayPlayerActor.phase) * Math.min(.55, distance * 18);
@@ -3276,11 +3877,12 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       function render(playbackSample = null, deltaTime = 0) {
         updateEnemyModels(deltaTime);
         updateRemoteModel();
-        updateReplayGhosts(playbackSample);
+        updateReplayGhosts(playbackSample, deltaTime);
         updateReplayPlayer(playbackSample, deltaTime);
         const eyePosition = new THREE.Vector3(
           player.x,
-          1.65 + jumpHeight - (dashTimer > 0 ? .22 : 0),
+          1.65 + getMapElevation(player.x, player.y) + rooftopFallHeight +
+            jumpHeight - (dashTimer > 0 ? .22 : 0),
           -player.y
         );
         const viewDirection = new THREE.Vector3(
@@ -3356,7 +3958,12 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         if (weaponAnchor) {
           weaponAnchor.visible = !playbackSample && !sukunaActive;
           const moving = movementInput().forward !== 0 || movementInput().strafe !== 0;
-          const sprinting = moving && isSprinting();
+          const sprinting = moving && isSprinting() && stamina > 0 && !sprintExhausted;
+          const weapon = currentWeapon();
+          const reloadProgress = reloadKind === "reload" && reloadTimer > 0
+            ? THREE.MathUtils.clamp(1 - reloadTimer / reloadDuration, 0, 1)
+            : 0;
+          const reloadEnvelope = Math.sin(reloadProgress * Math.PI);
           const aimOffset = aiming && !hasScope();
           const inspectProgress = inspectTimer > 0
             ? Math.max(0, Math.min(1, (inspectDuration - inspectTimer) / inspectDuration))
@@ -3369,12 +3976,12 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           const aspectScale = THREE.MathUtils.clamp(viewportAspect / (16 / 9), .78, 1);
           const viewModelScale = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) /
             Math.tan(THREE.MathUtils.degToRad(referenceViewModelFov / 2));
-          const weaponBaseY = currentWeapon().melee ? -.12 : -.3;
-          const weaponBaseZ = currentWeapon().melee ? -.55 : -.48;
+          const weaponBaseY = weapon.melee ? -.12 : -.3;
+          const weaponBaseZ = weapon.melee ? -.55 : -.48;
           const targetWeaponPosition = new THREE.Vector3(
             aimOffset ? .015 : .32 * aspectScale,
             (aimOffset ? -.17 : weaponBaseY) + Math.sin(movementBob) * (sprinting ? .012 : .006) -
-            weaponRecoil * .0008 - (dashTimer > 0 ? .06 : 0),
+            weaponRecoil * .0008 - (dashTimer > 0 ? .06 : 0) - reloadEnvelope * .14,
             weaponBaseZ);
           targetWeaponPosition.add(new THREE.Vector3(...inspectStyle.position).multiplyScalar(inspectEnvelope));
           targetWeaponPosition.z += aimOffset ? .12 : 0;
@@ -3384,20 +3991,56 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           targetWeaponPosition.x *= viewModelScale;
           targetWeaponPosition.y *= viewModelScale;
           weaponAnchor.position.lerp(targetWeaponPosition, .22);
-          const meleeArc = currentWeapon().melee ? Math.sin((1 - knifeSwing) * Math.PI) : 0;
+          const knifeProgress = weapon.melee && knifeSwing > 0
+            ? THREE.MathUtils.clamp(1 - knifeSwing / weapon.interval, 0, 1)
+            : 0;
+          const knifeSegment = Math.min(2, Math.floor(knifeProgress * 3));
+          const segmentProgress = knifeProgress > 0
+            ? knifeProgress * 3 - knifeSegment
+            : 0;
+          const meleeArc = weapon.melee && knifeSwing > 0
+            ? Math.sin(segmentProgress * Math.PI)
+            : 0;
+          const slashDirection = knifeSegment === 1 ? -1 : 1;
+          const stab = knifeSegment === 2 ? Math.sin(segmentProgress * Math.PI / 2) : 0;
           const inspectRotation = inspectStyle.rotation;
           weaponAnchor.rotation.x = (dashTimer > 0 ? -.16 : 0) + weaponRecoil * .004 -
-            meleeArc * .72 + inspectRotation[0] * inspectEnvelope;
-          weaponAnchor.rotation.y = meleeArc * .62 +
-            (currentWeapon().melee ? .9 + inspectRotation[1] * inspectEnvelope : inspectRotation[1] * inspectEnvelope);
-          weaponAnchor.rotation.z = (dashTimer > 0 ? -.08 : currentWeapon().melee ? -knifeSwing * .32 : 0) +
-            inspectRotation[2] * inspectEnvelope;
+            (weapon.melee ? meleeArc * .52 + stab * .9 : reloadEnvelope * .24) +
+            inspectRotation[0] * inspectEnvelope +
+            (weapon.melee ? Math.sin(inspectProgress * Math.PI * 4) * .16 * inspectEnvelope : 0);
+          weaponAnchor.rotation.y = weapon.melee
+            ? meleeArc * .62 * slashDirection + .9 + inspectRotation[1] * inspectEnvelope +
+              inspectProgress * Math.PI * 4
+            : inspectRotation[1] * inspectEnvelope + Math.PI * inspectEnvelope;
+          weaponAnchor.rotation.z = (dashTimer > 0 ? -.08 : weapon.melee ? -meleeArc * .42 * slashDirection : 0) +
+            inspectRotation[2] * inspectEnvelope + reloadEnvelope * .48;
           if (aiming && !hasScope()) alignWeaponSight();
+          if (viewmodelHands) {
+            viewmodelHands.visible = !sukunaActive && !(aiming && hasScope());
+            viewmodelHands.scale.setScalar(.72 * viewModelScale);
+            viewmodelHands.userData.leftHand.visible = !weapon.melee;
+            viewmodelHands.userData.triggerFinger.visible = !weapon.melee;
+            viewmodelHands.userData.rightHand.position.set(weapon.melee ? 0 : .02, .01,
+              weapon.melee ? .015 : .02);
+            viewmodelHands.userData.leftHand.position.copy(viewmodelHands.userData.leftHandRest)
+              .add(new THREE.Vector3(.08 * reloadEnvelope, -.08 * reloadEnvelope, .12 * reloadEnvelope));
+            viewmodelHands.userData.leftArm.rotation.x = -.35 * reloadEnvelope;
+          }
           muzzleLight.intensity = muzzleFlash > 0 ? 3.5 : 0;
           weaponModels.forEach((model, index) => {
             model.visible = !sukunaActive && index === player.weaponIndex && !(aiming && hasScope());
-            const firearmScale = (currentWeapon().melee ? 1 : 1.65) * viewModelScale;
+            const firearmScale = (weapon.melee ? 1 : 1.65) * viewModelScale;
             model.scale.setScalar(index === player.weaponIndex ? firearmScale * inspectScale : 1);
+            let magazine = null;
+            model.traverse(object => {
+              if (!magazine && /magazine|ammo[_ -]?clip/i.test(object.name)) magazine = object;
+            });
+            if (magazine) {
+              magazine.userData.reloadRestPosition ||= magazine.position.clone();
+              magazine.position.copy(magazine.userData.reloadRestPosition);
+              magazine.position.y -= reloadEnvelope * .18;
+              magazine.rotation.x = -reloadEnvelope * .55;
+            }
             const recoilProgress = index === player.weaponIndex
               ? Math.min(1, weaponRecoil / 20)
               : 0;
@@ -3450,7 +4093,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           vfxSystem.spawnMuzzleFlash(muzzlePosition);
           weaponRecoil = Math.max(weaponRecoil, (weapon.recoil || 7) * recoilScale);
         } else {
-          knifeSwing = 1;
+          knifeSwing = weapon.interval;
           playSound("knife");
         }
         fireCooldown = weapon.interval;
@@ -3479,21 +4122,23 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           const shotAngle = player.angle + (Math.random() - .5) * spread;
           const maxDistance = weapon.melee ? 1.8 : weapon.range || 18;
           const targets = enemies
-            .filter(enemy => gameMode !== "tdm" || enemy.team === 1)
+            .filter(enemy => enemy.health > 0 && (gameMode !== "tdm" || enemy.team === 1))
             .map(enemy => enemyModels.get(enemy) || createEnemyModel(enemy));
+          const shotDirection = getPlayerMuzzleWorldDirection()
+            .applyAxisAngle(new THREE.Vector3(0, 1, 0), shotAngle - player.angle)
+            .normalize();
           raycaster.set(
-            camera.position,
-            new THREE.Vector3(
-              Math.cos(shotAngle) * Math.cos(playerPitch),
-              Math.sin(playerPitch),
-              -Math.sin(shotAngle) * Math.cos(playerPitch)
-            ).normalize()
+            muzzlePosition,
+            shotDirection
           );
           raycaster.near = 0;
           raycaster.far = maxDistance;
-          const wallIntersection = mapWalls
-            ? raycaster.intersectObject(mapWalls, false)[0]
-            : null;
+          const wallIntersections = [];
+          if (mapWalls) wallIntersections.push(...raycaster.intersectObject(mapWalls, false));
+          if (mapObstacleMeshes.length) {
+            wallIntersections.push(...raycaster.intersectObjects(mapObstacleMeshes, false));
+          }
+          const wallIntersection = wallIntersections.sort((a, b) => a.distance - b.distance)[0] || null;
           const rayHits = collectPenetratingHits(
             raycaster.intersectObjects(targets, true),
             wallIntersection?.distance,
@@ -3600,7 +4245,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         audioManager.setCombatIntensity(Math.min(1, nearbyThreats / 4));
         fireCooldown = Math.max(0, fireCooldown - dt);
         muzzleFlash = Math.max(0, muzzleFlash - dt);
-        knifeSwing = Math.max(0, knifeSwing - dt * 4);
+        knifeSwing = Math.max(0, knifeSwing - dt);
         weaponRecoil = Math.max(0, weaponRecoil - dt * 40);
         weaponLagX *= Math.max(0, 1 - dt * (5 / currentWeapon().movementSpeed));
         dashTimer = Math.max(0, dashTimer - dt);
@@ -3657,11 +4302,16 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             }
           }
         }
-        const wantsSprint = !aiming && dashTimer === 0 && isSprinting() &&
-          (forward !== 0 || strafe !== 0);
-        if (wantsSprint && stamina > 0) stamina = Math.max(0, stamina - 32 * dt);
-        else stamina = Math.min(100, stamina + (moving ? 14 : 22) * dt);
-        const sprinting = wantsSprint && stamina > 0;
+        if (sprintExhausted && stamina >= 25) sprintExhausted = false;
+        const wantsSprint = !sprintExhausted && !aiming && dashTimer === 0 &&
+          isSprinting() && (forward !== 0 || strafe !== 0);
+        if (wantsSprint) {
+          stamina = Math.max(0, stamina - 32 * dt);
+          if (stamina === 0) sprintExhausted = true;
+        } else {
+          stamina = Math.min(100, stamina + (moving ? 14 : 22) * dt);
+        }
+        const sprinting = wantsSprint && !sprintExhausted;
         staminaFill.style.width = `${stamina}%`;
         staminaFill.style.background = stamina < 25 ? "#dd6d58" : "#79d8d0";
         staminaValue.textContent = String(Math.ceil(stamina));
@@ -3687,12 +4337,77 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const correction = networkManager.consumeCorrection(dt);
         if (correction.x || correction.y) movePlayer(correction.x, correction.y);
 
+        if (activeMapId === "rooftop") {
+          const dimensions = mapDefinitions.rooftop.dimensions;
+          if (!rooftopFalling && (player.x < 0 || player.y < 0 ||
+            player.x > dimensions.width || player.y > dimensions.depth)) {
+            rooftopFalling = true;
+            rooftopFallVelocity = 0;
+          }
+          if (rooftopFalling) {
+            rooftopFallVelocity -= 18 * dt;
+            rooftopFallHeight += rooftopFallVelocity * dt;
+            if (1.65 + rooftopFallHeight < -10) {
+              player.health = 0;
+              document.querySelector("#health").textContent = "0";
+              document.querySelector("#health-fill").style.width = "0%";
+              playSound("death");
+              endGame();
+              return;
+            }
+          }
+        } else {
+          rooftopFalling = false;
+          rooftopFallVelocity = 0;
+          rooftopFallHeight = 0;
+        }
+        const environmentalDamage = activeMapId === "iron_foundry"
+          ? getEnvironmentalDamage(player.x, player.y) * dt : 0;
+        if (environmentalDamage > 0 && gameMode !== "infinite") {
+          player.applyDamage(environmentalDamage);
+          document.querySelector("#health").textContent = String(Math.ceil(player.health));
+          const healthFill = document.querySelector("#health-fill");
+          healthFill.style.width = `${player.health}%`;
+          healthFill.style.background = player.health < 35 ? "#dd6d58" : "#c1e16d";
+          if (player.health === 0) {
+            playSound("death");
+            endGame();
+            return;
+          }
+        }
+
         for (const enemy of enemies) {
           const weapon = weapons[enemy.weaponIndex] || weapons[0];
           enemy.stunned = Math.max(0, (enemy.stunned || 0) - dt);
           enemy.blindTimer = Math.max(0, (enemy.blindTimer || 0) - dt);
           enemy.footstepTimer = Math.max(0, enemy.footstepTimer - dt);
           enemy.uavRevealTimer = Math.max(0, (enemy.uavRevealTimer || 0) - dt);
+          if (activeMapId === "rooftop") {
+            const dimensions = mapDefinitions.rooftop.dimensions;
+            if (!enemy.falling && (enemy.x < 0 || enemy.y < 0 ||
+              enemy.x > dimensions.width || enemy.y > dimensions.depth)) {
+              enemy.falling = true;
+              enemy.fallVelocity = 0;
+              enemy.fallHeight = 0;
+            }
+            if (enemy.falling) {
+              enemy.fallVelocity -= 18 * dt;
+              enemy.fallHeight += enemy.fallVelocity * dt;
+              if (enemy.fallHeight < -10) {
+                eliminateEnemy(enemy);
+                continue;
+              }
+            }
+          }
+          const hazardDamage = activeMapId === "iron_foundry"
+            ? getEnvironmentalDamage(enemy.x, enemy.y) * dt : 0;
+          if (hazardDamage > 0) {
+            enemy.health -= hazardDamage;
+            if (enemy.health <= 0) {
+              eliminateEnemy(enemy);
+              continue;
+            }
+          }
           if (enemy.trainingDummy || enemy.stunned > 0) continue;
           let action = botAI.update(enemy, player, dt, map, weapon);
           if (enemy.blindTimer > 0) {
@@ -3703,6 +4418,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           }
           const distance = action.distance;
           enemy.sprinting = action.sprinting;
+          enemy.aiming = action.state === "attack" || action.fire;
+          enemy.animationState = action.fire ? "shoot"
+            : action.moveX || action.moveY ? enemy.sprinting ? "run" : "walk" : "idle";
           enemy.phase += dt * (distance > 1.15 ? (enemy.sprinting ? 11 : 7) : 2);
           enemy.faceAngle = action.state === "attack" || action.state === "cover"
             ? Math.atan2(player.y - enemy.y, player.x - enemy.x)
@@ -3732,12 +4450,12 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             if (enemy.weaponIndex === 4 || Math.random() >= .35) continue;
             const wildAngle = enemy.faceAngle + (Math.random() - .5) * Math.PI * 2;
             const wildDistance = Math.min(weapon.range || 12, castRayFrom(enemy.x, enemy.y, wildAngle).distance);
-            const muzzle = new THREE.Vector3(enemy.x, 1.2, -enemy.y);
-            const miss = new THREE.Vector3(
-              enemy.x + Math.cos(wildAngle) * wildDistance,
-              1.2,
-              -(enemy.y + Math.sin(wildAngle) * wildDistance)
-            );
+            const muzzleTransform = getEnemyMuzzleWorldTransform(enemy);
+            const muzzle = muzzleTransform.position;
+            const wildDirection = muzzleTransform.direction
+              .clone()
+              .applyAxisAngle(new THREE.Vector3(0, 1, 0), wildAngle - enemy.faceAngle);
+            const miss = muzzle.clone().addScaledVector(wildDirection, wildDistance);
             playSound(enemy.weaponIndex === 1 ? "sniper" : "rifle", muzzle, { volume: .28, refDistance: 2.5 });
             vfxSystem.spawnBullet(muzzle, miss, { color: "#ff9b72", speed: 80 });
             addTracer(muzzle, miss, "#ff9b72");
@@ -3752,13 +4470,17 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           if (gameMode !== "infinite") player.applyDamage(Math.round(damage));
           hurtFlash = .8;
           damageMessageTimer = .3;
-          const muzzle = new THREE.Vector3(enemy.x, 1.2, -enemy.y);
+          const muzzleTransform = getEnemyMuzzleWorldTransform(enemy);
+          const muzzle = muzzleTransform.position;
           const playerChest = new THREE.Vector3(player.x, 1.25, -player.y);
           playSound(closeAttack ? "damage" : enemy.weaponIndex === 1 ? "sniper" : "rifle",
             muzzle, { volume: .45, refDistance: 3 });
           if (!closeAttack) {
-            vfxSystem.spawnBullet(muzzle, playerChest, { color: "#ff9b72", speed: 80 });
-            addTracer(muzzle, playerChest, "#ff9b72");
+            const targetDistance = muzzle.distanceTo(playerChest);
+            const projectileEnd = muzzle.clone()
+              .addScaledVector(muzzleTransform.direction, targetDistance);
+            vfxSystem.spawnBullet(muzzle, projectileEnd, { color: "#ff9b72", speed: 80 });
+            addTracer(muzzle, projectileEnd, "#ff9b72");
           }
           document.querySelector("#damage-overlay").classList.add("visible");
           scheduleTimeout(() => document.querySelector("#damage-overlay").classList.remove("visible"), 300);
@@ -3783,13 +4505,31 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           document.querySelector("#objective").textContent = "Sector clear - next wave inbound";
           spawnWave();
         }
-        const replayEnemies = enemies.map(enemy => ({ id: enemy.id, x: enemy.x, y: enemy.y, angle: enemy.faceAngle || 0 }));
+        playerAnimationState = reloadKind === "reload" ? "reload"
+          : firing && fireCooldown > 0 ? "shoot"
+            : moving ? sprinting ? "run" : "walk" : "idle";
+        const replayEnemies = enemies.map(enemy => ({
+          id: enemy.id,
+          x: enemy.x,
+          y: enemy.y,
+          angle: enemy.faceAngle || 0,
+          position: { x: enemy.x, y: (enemy.fallHeight || 0) + getMapElevation(enemy.x, enemy.y), z: -enemy.y },
+          rotation: { x: 0, y: (enemy.faceAngle || 0) - Math.PI / 2, z: 0 },
+          weapon: enemy.weaponIndex || 0,
+          weaponId: weapons[enemy.weaponIndex || 0]?.short.toLowerCase() || "rifle",
+          animationState: enemy.animationState || "idle"
+        }));
         if (remotePlayer && networkConnection?.open) {
           replayEnemies.push({
             id: "opponent",
             x: remotePlayer.x,
             y: remotePlayer.y,
-            angle: remotePlayer.angle || 0
+            angle: remotePlayer.angle || 0,
+            position: { x: remotePlayer.x, y: remotePlayer.position?.y || 0, z: -remotePlayer.y },
+            rotation: { x: remotePlayer.pitch || 0, y: (remotePlayer.angle || 0) - Math.PI / 2, z: 0 },
+            weapon: remotePlayer.weapon || 0,
+            weaponId: weapons[remotePlayer.weapon || 0]?.short.toLowerCase() || "rifle",
+            animationState: remotePlayer.animationState || (remotePlayer.firing ? "shoot" : "idle")
           });
         }
         const cameraDirection = camera.getWorldDirection(new THREE.Vector3());
@@ -3799,6 +4539,12 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           angle: player.angle,
           pitch: playerPitch,
           weapon: player.weaponIndex,
+          weaponId: weapons[player.weaponIndex]?.short.toLowerCase() || "rifle",
+          animationState: playerAnimationState,
+          position: {
+            x: player.x, y: rooftopFallHeight + getMapElevation(player.x, player.y), z: -player.y
+          },
+          rotation: { x: playerPitch, y: player.angle - Math.PI / 2, z: 0 },
           cameraPosition: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
           cameraDirection: { x: cameraDirection.x, y: cameraDirection.y, z: cameraDirection.z },
           fov: camera.fov
@@ -3810,6 +4556,14 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
               angle: remotePlayer.angle || 0,
               pitch: remotePlayer.pitch || 0,
               weapon: remotePlayer.weapon || 0,
+              weaponId: weapons[remotePlayer.weapon || 0]?.short.toLowerCase() || "rifle",
+              animationState: remotePlayer.animationState || (remotePlayer.firing ? "shoot" : "idle"),
+              position: {
+                x: remotePlayer.x, y: remotePlayer.position?.y || 0, z: -remotePlayer.y
+              },
+              rotation: {
+                x: remotePlayer.pitch || 0, y: (remotePlayer.angle || 0) - Math.PI / 2, z: 0
+              },
               cameraPosition: remotePlayer.cameraPosition || {
                 x: remotePlayer.x,
                 y: remotePlayer.position?.y || 1.65,
@@ -3889,6 +4643,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           dashTimer = 0;
           dashCooldown = 0;
           stamina = 100;
+          sprintExhausted = false;
           jumpHeight = 0;
           jumpVelocity = 0;
           bunnyHopMultiplier = 1;
@@ -3916,6 +4671,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           waveRewardsAwarded.clear();
           playerFlashTimer = 0;
           playerFlashFadeTimer = 0;
+          playerFlashFadeIn = 0;
+          playerFlashOpacity = 0;
+          pendingPlayerFlash = null;
           document.querySelector("#boss-health").hidden = true;
           grenades = 2;
           flashbangs = 1;

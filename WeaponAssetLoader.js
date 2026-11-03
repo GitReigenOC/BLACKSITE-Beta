@@ -8,6 +8,11 @@ const DEFAULT_WEAPON_ASSETS = [
   { name: "knife", url: "assets/weapons/knife.glb" }
 ];
 
+const CHARACTER_ASSETS = [
+  "assets/models/swat/swat.gltf",
+  "assets/characters/soldier.glb"
+];
+
 export class WeaponAssetLoader {
   constructor(engine, Loader, overrides = globalThis.BLACKSITE_WEAPON_ASSETS || {}) {
     this.engine = engine;
@@ -74,8 +79,8 @@ export class WeaponAssetLoader {
     group.add(barrel);
     addBox([isSniper ? .14 : .15, .12, isSniper ? .3 : .27], [0, 0, -.19]);
     addBox([.12, .09, .2], [0, 0, .045], darkMaterial).name = "weapon-bolt";
-    addBox([.075, .13, .12], [0, -.105, -.17], darkMaterial);
-    addBox([.11, .13, .1], [0, -.075, .015], darkMaterial);
+    addBox([.075, .13, .12], [0, -.105, -.17], darkMaterial).name = "weapon-magazine";
+    addBox([.11, .13, .1], [0, -.075, .015], darkMaterial).name = "weapon-grip";
 
     if (isSniper) {
       addBox([.065, .065, .3], [0, .105, -.2], darkMaterial);
@@ -115,6 +120,33 @@ export class WeaponAssetLoader {
     }));
   }
 
+  async loadCharacter(urls = CHARACTER_ASSETS) {
+    const failures = [];
+    for (const assetUrl of urls) {
+      const url = new URL(assetUrl, document.baseURI).href;
+      try {
+        const gltf = await this.loader.loadAsync(url);
+        const model = gltf.scene;
+        model.traverse(object => {
+          if (!object.isMesh) return;
+          object.castShadow = true;
+          object.receiveShadow = true;
+          if (object.geometry) {
+            object.geometry.computeBoundingBox();
+            object.geometry.computeBoundingSphere();
+          }
+        });
+        model.updateMatrixWorld(true);
+        return { model, animations: gltf.animations || [] };
+      } catch (error) {
+        failures.push({ url, error });
+      }
+    }
+
+    console.warn("Could not load a character rig; using procedural characters.", failures);
+    return null;
+  }
+
   createInstance(index) {
     const entry = this.loaded.get(index);
     return entry ? cloneSkeleton(entry.model) : cloneSkeleton(this.fallbacks[index]);
@@ -129,7 +161,31 @@ export class WeaponAssetLoader {
     const configuredOffset = this.loaded.get(index)?.asset.muzzle;
     const socket = new this.engine.Group();
     socket.name = `${this.assets[index]?.name || "weapon"}-muzzle-socket`;
-    socket.position.set(...(configuredOffset || [0, .025, -.62]));
+    if (configuredOffset) {
+      socket.position.set(...configuredOffset);
+      instance.add(socket);
+      return socket;
+    }
+
+    let barrel = null;
+    instance.traverse(object => {
+      if (!barrel && object.isMesh && /barrel/i.test(object.name)) barrel = object;
+    });
+    if (barrel?.geometry) {
+      barrel.geometry.computeBoundingBox();
+      const size = barrel.geometry.boundingBox.getSize(new this.engine.Vector3());
+      if (size.y >= size.z && size.y >= size.x) {
+        socket.position.y = -size.y / 2;
+        socket.rotation.x = -Math.PI / 2;
+      } else if (size.z >= size.x) {
+        socket.position.z = -size.z / 2;
+      } else {
+        socket.position.x = -size.x / 2;
+      }
+      barrel.add(socket);
+      return socket;
+    }
+    socket.position.set(0, .025, -.62);
     instance.add(socket);
     return socket;
   }

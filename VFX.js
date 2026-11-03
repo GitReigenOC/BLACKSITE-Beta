@@ -1,7 +1,7 @@
 import { DecalManager } from "./DecalManager.js";
 
 export class VFXSystem {
-  constructor(engine, scene, { bulletCapacity = 80, particleCapacity = 256, tracerCapacity = 96 } = {}) {
+  constructor(engine, scene, { bulletCapacity = 80, particleCapacity = 512, tracerCapacity = 96 } = {}) {
     this.engine = engine;
     this.scene = scene;
     this.bullets = [];
@@ -26,7 +26,7 @@ export class VFXSystem {
       const light = new engine.PointLight("#ffc76b", 0, 3, 2);
       light.visible = false;
       scene.add(light);
-      return { light, remaining: 0, duration: .055 };
+      return { light, remaining: 0, duration: .055, intensity: 3.5 };
     });
     this.dummy = new engine.Object3D();
     this.identityQuaternion = new engine.Quaternion();
@@ -169,7 +169,25 @@ export class VFXSystem {
   }
 
   spawnSlash(position, normal, size = .42) {
+    const tangent = new this.engine.Vector3().crossVectors(normal, new this.engine.Vector3(0, 1, 0));
+    if (tangent.lengthSq() < .01) tangent.set(1, 0, 0);
+    tangent.normalize();
     this.slashes.add(position, normal, size, "#ffffff");
+    this.slashes.add(position.clone().addScaledVector(tangent, .1), normal, size * .82, "#ded8c4");
+    this.slashes.add(position.clone().addScaledVector(tangent, -.1), normal, size * .66, "#ffffff");
+    for (let index = 0; index < 7; index++) {
+      const direction = tangent.clone().multiplyScalar((Math.random() - .5) * 2)
+        .add(new this.engine.Vector3(0, .35 + Math.random() * .8, 0))
+        .addScaledVector(normal, .3 + Math.random() * .7)
+        .normalize();
+      this.spawnParticle(position, {
+        velocity: direction.multiplyScalar(1.2 + Math.random() * 2),
+        duration: .14 + Math.random() * .1,
+        scale: .025 + Math.random() * .02,
+        gravity: 1.2,
+        color: index % 2 ? "#e4e6d5" : "#b9d1c2"
+      });
+    }
   }
 
   clearDecals() {
@@ -254,7 +272,9 @@ export class VFXSystem {
     const flash = this.lights.find(item => item.remaining <= 0) ||
       this.lights.reduce((oldest, item) => item.remaining < oldest.remaining ? item : oldest);
     flash.light.position.copy(position);
-    flash.light.intensity = 3.5;
+    flash.duration = .055;
+    flash.intensity = 3.5;
+    flash.light.intensity = flash.intensity;
     flash.light.visible = true;
     flash.remaining = flash.duration;
   }
@@ -264,24 +284,65 @@ export class VFXSystem {
       color,
       duration: .4,
       scale: .12,
-      endScale: 2.9,
+      endScale: 4.2,
       gravity: 0,
       expanding: true
     });
-    for (let index = 0; index < 18; index++) {
+    this.spawnParticle(position, {
+      color: "#ffe0a2",
+      duration: .28,
+      scale: .08,
+      endScale: 2.4,
+      gravity: 0,
+      expanding: true
+    });
+    for (let index = 0; index < 42; index++) {
       const direction = new this.engine.Vector3(
         Math.random() * 2 - 1,
-        Math.random() * 2 - .45,
+        Math.random() * 1.8 - .1,
         Math.random() * 2 - 1
       ).normalize();
       this.spawnParticle(position, {
-        velocity: direction.multiplyScalar(2 + Math.random() * 5),
+        velocity: direction.multiplyScalar(3 + Math.random() * 8),
         color: index % 3 ? color : "#ffd98a",
-        duration: .55 + Math.random() * .35,
-        scale: .025 + Math.random() * .025,
-        gravity: 5.2
+        duration: .65 + Math.random() * .6,
+        scale: .035 + Math.random() * .035,
+        gravity: 6.5
       });
     }
+    for (let index = 0; index < 28; index++) {
+      const direction = new this.engine.Vector3(
+        Math.random() * 2 - 1,
+        Math.random() * .5,
+        Math.random() * 2 - 1
+      ).normalize();
+      const offsetPosition = position.clone().add(new this.engine.Vector3(
+        (Math.random() - .5) * .8, Math.random() * .45, (Math.random() - .5) * .8
+      ));
+      this.spawnParticle(offsetPosition, {
+        velocity: direction.multiplyScalar(.2 + Math.random() * 1.2),
+        duration: .9 + Math.random() * .65,
+        scale: .12 + Math.random() * .08,
+        endScale: .75 + Math.random() * .6,
+        gravity: 0,
+        color: index % 2 ? "#77736b" : "#4c4944",
+        expanding: true
+      });
+    }
+    this.decals.add(
+      new this.engine.Vector3(position.x, .012, position.z),
+      new this.engine.Vector3(0, 1, 0),
+      2.7,
+      "#39291e"
+    );
+    const flash = this.lights.find(item => item.remaining <= 0) ||
+      this.lights.reduce((oldest, item) => item.remaining < oldest.remaining ? item : oldest);
+    flash.light.position.copy(position);
+    flash.duration = .22;
+    flash.intensity = 9;
+    flash.light.intensity = flash.intensity;
+    flash.light.visible = true;
+    flash.remaining = flash.duration;
   }
 
   update(dt) {
@@ -359,10 +420,12 @@ export class VFXSystem {
       const flash = this.lights[index];
       if (flash.remaining <= 0) continue;
       flash.remaining -= dt;
-      flash.light.intensity = Math.max(0, flash.remaining / flash.duration) * 3.5;
+      flash.light.intensity = Math.max(0, flash.remaining / flash.duration) * flash.intensity;
       if (flash.remaining > 0) continue;
       flash.light.intensity = 0;
       flash.light.visible = false;
+      flash.duration = .055;
+      flash.intensity = 3.5;
     }
   }
 
@@ -381,9 +444,13 @@ export class VFXSystem {
       this.setInstance(this.particlePool, index, this.hiddenPosition, this.identityQuaternion, .001);
     }
     this.particlePool.instanceMatrix.needsUpdate = true;
-    for (const { light } of this.lights) {
+    for (const flash of this.lights) {
+      const { light } = flash;
       light.intensity = 0;
       light.visible = false;
+      flash.duration = .055;
+      flash.intensity = 3.5;
+      flash.remaining = 0;
     }
     for (let index = 0; index < this.tracers.length; index++) {
       this.tracers[index].active = false;

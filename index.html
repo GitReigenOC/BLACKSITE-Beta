@@ -1,12 +1,12 @@
 ---
-title: BLACKSITE — Tactical Arena
+title: BLACKSITE - Tactical Arena
 description: A browser-based tactical arena training game.
 ---
 
   <main class="game-shell">
     <header class="topbar">
       <div class="brand">BLACK<span>SITE</span></div>
-      <div class="status"><span class="dot"></span> Training simulation <button class="pause-button" id="fullscreen-button" type="button" aria-label="Enter fullscreen">⛶ Fullscreen</button><button class="pause-button" id="pause-button" type="button">Ⅱ Pause</button></div>
+      <div class="status"><span class="dot"></span> Training simulation <button class="pause-button" id="fullscreen-button" type="button" aria-label="Enter fullscreen">Fullscreen</button><button class="pause-button" id="pause-button" type="button">Pause</button></div>
     </header>
     <section class="stage" aria-label="First-person tactical arena game">
       <canvas id="game" aria-label="Game view"></canvas>
@@ -50,8 +50,8 @@ description: A browser-based tactical arena training game.
           <span class="scope-reticle scope-reticle--vertical"></span>
           <span class="scope-reticle scope-reticle--horizontal"></span>
           <span class="scope-reticle scope-reticle--center"></span>
-          <span class="scope-range scope-range--top">· &nbsp;· &nbsp;·</span>
-          <span class="scope-range scope-range--bottom">· &nbsp;· &nbsp;·</span>
+          <span class="scope-range scope-range--top">...</span>
+          <span class="scope-range scope-range--bottom">...</span>
           <span class="scope-mark scope-mark--left"></span>
           <span class="scope-mark scope-mark--right"></span>
         </div>
@@ -114,11 +114,17 @@ description: A browser-based tactical arena training game.
             <button type="button" class="map-card" data-map="pool" aria-pressed="false">
               <strong>THE POOL ROOMS</strong><span>A tiled maze of glowing cyan water.</span>
             </button>
-            <button type="button" class="map-card" data-map="foundry" aria-pressed="false">
+            <button type="button" class="map-card" data-map="iron_foundry" aria-pressed="false">
               <strong>IRON FOUNDRY</strong><span>Industrial lanes, furnace stacks, and cover.</span>
             </button>
             <button type="button" class="map-card" data-map="rooftop" aria-pressed="false">
               <strong>ROOFTOP</strong><span>An exposed high-rise training ground.</span>
+            </button>
+            <button type="button" class="map-card" data-map="desert_outpost" aria-pressed="false">
+              <strong>DESERT OUTPOST</strong><span>A fortified desert checkpoint with sandbag lines and watchtowers.</span>
+            </button>
+            <button type="button" class="map-card" data-map="subway_terminal" aria-pressed="false">
+              <strong>SUBWAY TERMINAL</strong><span>An abandoned underground station with platforms and track lanes.</span>
             </button>
           </div>
           <div class="menu-actions">
@@ -126,7 +132,7 @@ description: A browser-based tactical arena training game.
             <button type="button" id="training-button" class="button-secondary">Training grounds</button>
             <button type="button" id="infinite-button" class="button-secondary">Infinite mode</button>
             <button type="button" id="zombies-button" class="button-secondary">Zombies</button>
-            <button type="button" id="shop-button" class="button-secondary">Outcome Memories shop</button>
+            <button type="button" id="shop-button" class="button-secondary">Outpost (Shop)</button>
             <button type="button" id="multiplayer-button" class="button-secondary">Multiplayer</button>
             <button type="button" id="settings-button" class="button-secondary">Settings</button>
             <button type="button" id="profile-button" class="button-text">View operator profile</button>
@@ -152,7 +158,7 @@ description: A browser-based tactical arena training game.
       </div>
       <div class="menu-layer" id="shop-screen" hidden>
         <div class="menu-panel menu-panel--wide">
-          <div class="kicker">OUTCOME MEMORIES / OPERATOR ARMORY</div>
+          <div class="kicker">OUTPOST / OPERATOR ARMORY</div>
           <h1>STYLE YOUR<br>LOADOUT</h1>
           <p>Earn credits in solo waves. Cosmetic purchases are local to this browser.</p>
           <div class="shop-balance">AVAILABLE CREDITS <b id="shop-credits">0</b></div>
@@ -201,8 +207,10 @@ description: A browser-based tactical arena training game.
               <option value="arena">Tactical Arena</option>
               <option value="battlefield">Battlefield</option>
               <option value="pool">The Pool Rooms</option>
-              <option value="foundry">Foundry</option>
+              <option value="iron_foundry">Foundry</option>
               <option value="rooftop">Rooftop</option>
+              <option value="desert_outpost">Desert Outpost</option>
+              <option value="subway_terminal">Subway Terminal</option>
             </select>
             <button type="button" id="apply-room-config-button">Apply to active room</button>
           </section>
@@ -227,7 +235,7 @@ description: A browser-based tactical arena training game.
       </div>
       <div class="menu-layer" id="profile-modal" hidden>
         <div class="menu-panel profile-card">
-          <button type="button" class="modal-close" id="close-profile-modal" aria-label="Close profile">×</button>
+          <button type="button" class="modal-close" id="close-profile-modal" aria-label="Close profile">&times;</button>
           <div class="kicker">OPERATOR PROFILE</div>
           <div class="avatar" id="profile-avatar">OP</div>
           <h1 id="profile-card-name">Operator</h1>
@@ -241,17 +249,17 @@ description: A browser-based tactical arena training game.
           <h1>LOOK<br>SENSITIVITY</h1>
           <p>Adjust mouse and touch look speed. Scoped sensitivity is a multiplier of your normal sensitivity.</p>
           <label class="setting-row" for="sensitivity-setting">
-            <span>Look sensitivity <output id="sensitivity-value" for="sensitivity-setting">1.00×</output></span>
+            <span>Look sensitivity <output id="sensitivity-value" for="sensitivity-setting">1.00x</output></span>
             <input id="sensitivity-setting" type="range" min="0.2" max="3" step="0.05" value="1">
-            <span class="setting-hint">Lower for finer aim · Higher for quicker turns</span>
+            <span class="setting-hint">Lower for finer aim / Higher for quicker turns</span>
           </label>
           <label class="setting-row" for="scope-sensitivity-setting">
-            <span>Scoped sensitivity <output id="scope-sensitivity-value" for="scope-sensitivity-setting">0.25×</output></span>
+            <span>Scoped sensitivity <output id="scope-sensitivity-value" for="scope-sensitivity-setting">0.25x</output></span>
             <input id="scope-sensitivity-setting" type="range" min="0.1" max="1" step="0.02" value="0.25">
             <span class="setting-hint">Scoped look speed multiplier; lower values steady long-range aim</span>
           </label>
           <label class="setting-row" for="fov-setting">
-            <span>Field of view <output id="fov-value" for="fov-setting">82°</output></span>
+            <span>Field of view <output id="fov-value" for="fov-setting">82 deg</output></span>
             <input id="fov-setting" type="range" min="65" max="110" step="1" value="82">
             <span class="setting-hint">Horizontal display angle in degrees</span>
           </label>
@@ -283,15 +291,15 @@ description: A browser-based tactical arena training game.
       </div>
     </section>
     <footer class="bottombar">
-      <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> MOVE</span>&nbsp;&nbsp; · &nbsp;&nbsp;
-      <span><kbd>SHIFT</kbd> SPRINT / <kbd>SPACE</kbd> JUMP / <kbd>C</kbd> DASH</span>&nbsp;&nbsp; · &nbsp;&nbsp;
-      <span>MOUSE AIM</span>&nbsp;&nbsp; · &nbsp;&nbsp;
-      <span><kbd>CLICK</kbd> FIRE</span>&nbsp;&nbsp; · &nbsp;&nbsp;
-      <span><kbd>1-5</kbd> / WHEEL SWAP</span>&nbsp;&nbsp; · &nbsp;&nbsp;
-      <span><kbd>R</kbd> RELOAD</span>&nbsp;&nbsp; · &nbsp;&nbsp;
-      <span><kbd>E</kbd> PICK UP</span>&nbsp;&nbsp; · &nbsp;&nbsp;
-      <span><kbd>RIGHT CLICK</kbd> AIM</span>&nbsp;&nbsp; · &nbsp;&nbsp;
-      <span><kbd>G</kbd> FRAG / <kbd>V</kbd> FLASH / <kbd>F</kbd> INSPECT</span>&nbsp;&nbsp; · &nbsp;&nbsp;
+      <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> MOVE</span> |
+      <span><kbd>SHIFT</kbd> SPRINT / <kbd>SPACE</kbd> JUMP / <kbd>C</kbd> DASH</span> |
+      <span>MOUSE AIM</span> |
+      <span><kbd>CLICK</kbd> FIRE</span> |
+      <span><kbd>1-5</kbd> / WHEEL SWAP</span> |
+      <span><kbd>R</kbd> RELOAD</span> |
+      <span><kbd>E</kbd> PICK UP</span> |
+      <span><kbd>RIGHT CLICK</kbd> AIM</span> |
+      <span><kbd>G</kbd> FRAG / <kbd>V</kbd> FLASH / <kbd>F</kbd> INSPECT</span> |
       <span><kbd>ESC</kbd> PAUSE</span>
     </footer>
   </main>

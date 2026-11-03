@@ -3,7 +3,7 @@ export const WEAPON_PROFILES = [
   { name: "PRECISION SNIPER", short: "SNIPER", magazine: 5, ammo: 5, reserve: 25, damage: 72, spread: 0, interval: 1.25, reloadTime: 1.6, range: 22, scoped: true, piercing: true, chamberTime: .72, recoil: 20, movementSpeed: 1.05, inspect: { position: [-.06, .2, .08], rotation: [.24, -.82, -.16] } },
   { name: "BREACH SHOTGUN", short: "SHOTGUN", magazine: 8, ammo: 8, reserve: 40, damage: 100, pellets: 7, spread: .24, interval: .65, reloadTime: 1.4, range: 9, recoil: 15, movementSpeed: .88, inspect: { position: [.17, .08, .02], rotation: [-.5, .42, .3] } },
   { name: "COMPACT SMG", short: "SMG", magazine: 32, ammo: 32, reserve: 128, damage: 34, spread: .12, interval: .085, reloadTime: 1.1, range: 13, auto: true, recoil: 5, movementSpeed: 1.12, inspect: { position: [.14, .16, .08], rotation: [.48, 1.05, -.2] } },
-  { name: "COMBAT KNIFE", short: "KNIFE", magazine: 0, ammo: 0, reserve: 0, damage: 52, spread: .6, interval: .48, melee: true, range: 1.8, recoil: 7, movementSpeed: 1.3, inspect: { position: [-.12, .24, -.06], rotation: [-.18, -.28, .08] } }
+  { name: "COMBAT KNIFE", short: "KNIFE", magazine: 0, ammo: 0, reserve: 0, damage: 52, spread: .6, interval: .84, melee: true, range: 1.8, recoil: 7, movementSpeed: 1.3, inspect: { position: [-.12, .24, -.06], rotation: [-.18, -.28, .08] } }
 ].map(profile => ({
   ...profile,
   attachments: { optic: false, suppressor: false, foregrip: false }
@@ -13,15 +13,16 @@ export function collectPenetratingHits(intersections, wallDistance, piercing, ma
   const targets = [];
   const seen = new Set();
   for (const hit of intersections) {
-    if (!hit.object?.userData?.isHitbox) continue;
-    const enemy = hit.object.userData.enemyRef;
-    if (!enemy || seen.has(enemy)) continue;
+    const userData = hit.object?.userData;
+    const enemy = userData?.enemyRef;
+    if (!enemy || userData.isWeapon) continue;
+    if (seen.has(enemy)) continue;
     if (Number.isFinite(wallDistance) && hit.distance >= wallDistance - .015) break;
     seen.add(enemy);
     targets.push({
       enemy,
       distance: hit.distance,
-      hitZone: hit.object.userData.hitZone || "chest",
+      hitZone: userData.hitZone || "chest",
       point: hit.point.clone(),
       normal: hit.face?.normal?.clone().transformDirection(hit.object.matrixWorld) || null,
       penetrationScale: piercing ? Math.pow(.72, targets.length) : 1
