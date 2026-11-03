@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#101512">
   <title>{{ page.title | default: site.title | escape }}</title>
   <meta name="description" content="{{ page.description | default: site.description | escape }}">
-  <link rel="icon" type="image/png" href="{{ '/Images/BLogo.png' | relative_url }}">
-  <link rel="stylesheet" href="{{ '/styles.css' | relative_url }}">
+  <link rel="icon" type="image/png" href="Images/BLogo.png">
+  <link rel="stylesheet" href="styles.css">
   <script type="importmap">
     {
       "imports": {
@@ -20,6 +20,6 @@
 <body>
   {{ content }}
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" defer></script>
-  <script type="module" src="{{ '/main.js' | relative_url }}"></script>
+  <script type="module" src="main.js"></script>
 </body>
 </html>
