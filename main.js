@@ -64,12 +64,12 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       let enemyRigAnimations = [];
       let playerRigModel = null;
       let playerRigActor = null;
+      let firstPersonHandPose = null;
       let warnedMissingHandSocket = false;
       let remoteModel = null;
       let replayPlayerModel = null;
       let replayPlayerActor = null;
       let weaponAnchor = null;
-      let viewmodelHands = null;
       let muzzleLight = null;
       let parryShield = null;
       let weaponModels = [];
@@ -1050,58 +1050,6 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           weaponAnchor.add(holder);
           return holder;
         });
-        const hands = new THREE.Group();
-        const sleeveMaterial = new THREE.MeshBasicMaterial({ color: "#29312b", toneMapped: false });
-        const gloveMaterial = new THREE.MeshBasicMaterial({ color: "#39423b", toneMapped: false });
-        const makeArm = (position, angle) => {
-          const arm = new THREE.Group();
-          const sleeve = new THREE.Mesh(cachedCylinderGeometry(.045, .065, .24, 10), sleeveMaterial);
-          sleeve.rotation.z = angle;
-          sleeve.position.set(...position);
-          sleeve.castShadow = true;
-          const wrist = new THREE.Mesh(new THREE.SphereGeometry(.055, 10, 8), gloveMaterial);
-          wrist.position.set(position[0] - Math.sin(angle) * .12, position[1] + Math.cos(angle) * .12, position[2]);
-          wrist.scale.set(1.05, .72, 1.15);
-          wrist.castShadow = true;
-          arm.add(sleeve, wrist);
-          return { arm, wrist };
-        };
-        const rightArm = makeArm([.05, -.02, -.08], .58);
-        const leftArm = makeArm([-.25, -.02, -.22], -.62);
-        const makeHand = () => {
-          const hand = new THREE.Group();
-          const palm = new THREE.Mesh(cachedBoxGeometry(.12, .055, .12), gloveMaterial);
-          palm.castShadow = true;
-          hand.add(palm);
-          for (let finger = 0; finger < 4; finger++) {
-            const digit = new THREE.Mesh(cachedBoxGeometry(.025, .025, .08), gloveMaterial);
-            digit.position.set(-.043 + finger * .029, -.012, -.085);
-            digit.castShadow = true;
-            hand.add(digit);
-          }
-          const thumb = new THREE.Mesh(cachedBoxGeometry(.035, .035, .07), gloveMaterial);
-          thumb.position.set(.07, -.005, -.025);
-          thumb.rotation.y = -.45;
-          thumb.castShadow = true;
-          hand.add(thumb);
-          return hand;
-        };
-        const rightHand = makeHand();
-        rightHand.position.set(0, .01, .02);
-        const leftHand = makeHand();
-        leftHand.position.set(-.04, .01, -.25);
-        const triggerFinger = new THREE.Mesh(cachedBoxGeometry(.025, .02, .07), gloveMaterial);
-        triggerFinger.position.set(.04, -.01, -.05);
-        triggerFinger.castShadow = true;
-        hands.add(rightArm.arm, leftArm.arm, rightHand, leftHand, triggerFinger);
-        hands.userData.rightHand = rightHand;
-        hands.userData.triggerFinger = triggerFinger;
-        hands.userData.leftHand = leftHand;
-        hands.userData.leftHandRest = leftHand.position.clone();
-        hands.userData.leftArm = leftArm.arm;
-        hands.userData.rightArm = rightArm.arm;
-        weaponAnchor.add(hands);
-        viewmodelHands = hands;
         weaponAssetLoader.loadAll().then(() => {
           weaponModels.forEach((holder, index) => {
             const model = weaponAssetLoader.createInstance(index);
@@ -1155,6 +1103,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       let hitMarkerTimeout = 0, hitConfirmationTimeout = 0;
       let reloadDuration = 0;
       let firing = false, aiming = false, toastTimeout = 0, knifeSwing = 0, movementBob = 0;
+      let knifeComboStep = 0, knifeAttackStyle = "stab";
       let weaponRecoil = 0, recoilPitch = 0, recoilYaw = 0, weaponLagX = 0, dashTimer = 0, dashCooldown = 0;
       let stamina = 100, sprintExhausted = false, jumpHeight = 0, jumpVelocity = 0,
         bunnyHopMultiplier = 1, cameraKickback = 0;
@@ -2873,11 +2822,13 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
         const animationMixer = new THREE.AnimationMixer(model);
         const clipForState = {
-          idle: enemyRigAnimations.find(clip => /idle|stand|breath/i.test(clip.name)),
+          idle: enemyRigAnimations.find(clip => /idle_gun|idle|stand|breath/i.test(clip.name)),
           walk: enemyRigAnimations.find(clip => /walk|move/i.test(clip.name)),
           run: enemyRigAnimations.find(clip => /run|sprint/i.test(clip.name)),
           shoot: enemyRigAnimations.find(clip => /shoot|fire|attack/i.test(clip.name)),
-          reload: enemyRigAnimations.find(clip => /reload/i.test(clip.name))
+          reload: enemyRigAnimations.find(clip => /reload/i.test(clip.name)),
+          stab: enemyRigAnimations.find(clip => /punch_right|stab/i.test(clip.name)),
+          slash: enemyRigAnimations.find(clip => /sword_slash|slash/i.test(clip.name))
         };
         const animationActions = {};
         for (const [state, clip] of Object.entries(clipForState)) {
@@ -2910,13 +2861,13 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const nextAction = actions[selectedState];
         if (!nextAction) return;
         if (model.userData.animationState === selectedState) {
-          if ((selectedState === "shoot" || selectedState === "reload") && !nextAction.isRunning()) {
+          if (["shoot", "reload", "stab", "slash"].includes(selectedState) && !nextAction.isRunning()) {
             nextAction.reset().play();
           }
           return;
         }
         const previousAction = actions[model.userData.animationState];
-        const oneShot = selectedState === "shoot" || selectedState === "reload";
+        const oneShot = ["shoot", "reload", "stab", "slash"].includes(selectedState);
         nextAction.reset();
         nextAction.setLoop(oneShot ? THREE.LoopOnce : THREE.LoopRepeat, oneShot ? 1 : Infinity);
         nextAction.clampWhenFinished = oneShot;
@@ -2976,7 +2927,33 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           playerRigModel = createRiggedEnemyModel(playerRigActor);
           if (playerRigModel) {
             enemyModels.delete(playerRigActor);
-            playerRigModel.visible = false;
+            const bones = [];
+            playerRigModel.traverse(object => {
+              if (object.isBone) bones.push(object);
+              if (object.isMesh) {
+                object.visible = /^Swat_Torso/i.test(object.name);
+                object.userData.enemyRef = null;
+              }
+            });
+            playerRigModel.userData.hitboxes.visible = false;
+            playerRigModel.scale.setScalar(.45);
+            playerRigModel.position.set(0, -1, -1);
+            playerRigModel.rotation.set(0, Math.PI, 0);
+            playerRigModel.userData.firstPerson = true;
+            firstPersonHandPose = {
+              index: bones.filter(bone => /^Index[1-4]R$/i.test(bone.name))
+                .map(bone => ({ bone, rotation: bone.rotation.clone() }))
+            };
+            scene.remove(playerRigModel);
+            camera.add(playerRigModel);
+            weaponAnchor.parent?.remove(weaponAnchor);
+            const hand = playerRigModel.userData.weaponHand;
+            hand.add(weaponAnchor);
+            weaponAnchor.position.set(0, .05, 0);
+            weaponAnchor.rotation.set(0, 0, 0);
+            weaponAnchor.scale.setScalar(1 / .45);
+            playerRigModel.visible = true;
+            playerRigModel.userData.mixer.update(0);
           }
         }).catch(error => {
           console.error("Character rig loading failed unexpectedly; using procedural characters.", error);
@@ -2987,12 +2964,18 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         if (playerRigModel && playerRigActor) {
           playerRigActor.weaponIndex = player.weaponIndex;
           playerRigActor.animationState = playerAnimationState;
-          playerRigModel.position.set(player.x, getMapElevation(player.x, player.y) + rooftopFallHeight, -player.y);
-          playerRigModel.rotation.y = player.angle - Math.PI / 2;
+          if (playerRigModel.userData.firstPerson) {
+            playerRigModel.position.set(0, -1, -1);
+            playerRigModel.rotation.set(0, Math.PI, 0);
+          } else {
+            playerRigModel.position.set(player.x, getMapElevation(player.x, player.y) + rooftopFallHeight, -player.y);
+            playerRigModel.rotation.y = player.angle - Math.PI / 2;
+          }
           playerRigModel.userData.mixer.update(dt);
-          setRigAnimation(playerRigModel, playerAnimationState);
-          updateRiggedWeapon(playerRigModel, playerRigActor);
-          playerRigModel.visible = false;
+          setRigAnimation(playerRigModel, knifeSwing > 0 && currentWeapon().melee
+            ? knifeAttackStyle : playerAnimationState);
+          if (!playerRigModel.userData.firstPerson) updateRiggedWeapon(playerRigModel, playerRigActor);
+          playerRigModel.visible = playerRigModel.userData.firstPerson;
         }
         const liveEnemies = new Set(enemies);
         for (const [enemy, model] of enemyModels) {
@@ -3990,41 +3973,36 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             weaponLagX * .00045;
           targetWeaponPosition.x *= viewModelScale;
           targetWeaponPosition.y *= viewModelScale;
-          weaponAnchor.position.lerp(targetWeaponPosition, .22);
+          if (playerRigModel?.userData.firstPerson) weaponAnchor.position.set(0, .05, 0);
+          else weaponAnchor.position.lerp(targetWeaponPosition, .22);
           const knifeProgress = weapon.melee && knifeSwing > 0
             ? THREE.MathUtils.clamp(1 - knifeSwing / weapon.interval, 0, 1)
             : 0;
-          const knifeSegment = Math.min(2, Math.floor(knifeProgress * 3));
-          const segmentProgress = knifeProgress > 0
-            ? knifeProgress * 3 - knifeSegment
-            : 0;
           const meleeArc = weapon.melee && knifeSwing > 0
-            ? Math.sin(segmentProgress * Math.PI)
+            ? Math.sin(knifeProgress * Math.PI)
             : 0;
-          const slashDirection = knifeSegment === 1 ? -1 : 1;
-          const stab = knifeSegment === 2 ? Math.sin(segmentProgress * Math.PI / 2) : 0;
+          const slashDirection = knifeAttackStyle === "slash" ? -1 : 1;
+          const stab = knifeAttackStyle === "stab" && knifeSwing > 0 ? meleeArc : 0;
           const inspectRotation = inspectStyle.rotation;
+          const inspectSpin = weapon.melee ? inspectProgress * Math.PI * 4 : 0;
           weaponAnchor.rotation.x = (dashTimer > 0 ? -.16 : 0) + weaponRecoil * .004 -
-            (weapon.melee ? meleeArc * .52 + stab * .9 : reloadEnvelope * .24) +
-            inspectRotation[0] * inspectEnvelope +
-            (weapon.melee ? Math.sin(inspectProgress * Math.PI * 4) * .16 * inspectEnvelope : 0);
+            (weapon.melee ? stab * .9 : reloadEnvelope * .24) + inspectRotation[0] * inspectEnvelope;
           weaponAnchor.rotation.y = weapon.melee
-            ? meleeArc * .62 * slashDirection + .9 + inspectRotation[1] * inspectEnvelope +
-              inspectProgress * Math.PI * 4
+            ? .9 + inspectRotation[1] * inspectEnvelope + inspectSpin
             : inspectRotation[1] * inspectEnvelope + Math.PI * inspectEnvelope;
-          weaponAnchor.rotation.z = (dashTimer > 0 ? -.08 : weapon.melee ? -meleeArc * .42 * slashDirection : 0) +
+          weaponAnchor.rotation.z = (dashTimer > 0 ? -.08 : weapon.melee ? meleeArc * .55 * slashDirection : 0) +
             inspectRotation[2] * inspectEnvelope + reloadEnvelope * .48;
           if (aiming && !hasScope()) alignWeaponSight();
-          if (viewmodelHands) {
-            viewmodelHands.visible = !sukunaActive && !(aiming && hasScope());
-            viewmodelHands.scale.setScalar(.72 * viewModelScale);
-            viewmodelHands.userData.leftHand.visible = !weapon.melee;
-            viewmodelHands.userData.triggerFinger.visible = !weapon.melee;
-            viewmodelHands.userData.rightHand.position.set(weapon.melee ? 0 : .02, .01,
-              weapon.melee ? .015 : .02);
-            viewmodelHands.userData.leftHand.position.copy(viewmodelHands.userData.leftHandRest)
-              .add(new THREE.Vector3(.08 * reloadEnvelope, -.08 * reloadEnvelope, .12 * reloadEnvelope));
-            viewmodelHands.userData.leftArm.rotation.x = -.35 * reloadEnvelope;
+          if (playerRigModel?.userData.firstPerson) {
+            playerRigModel.visible = !sukunaActive && !(aiming && hasScope());
+            const inspectingKnife = weapon.melee && inspectEnvelope > .05;
+            firstPersonHandPose?.index.forEach(({ bone, rotation }) => {
+              bone.rotation.copy(rotation);
+              if (inspectingKnife) {
+                bone.rotation.x -= .28 * inspectEnvelope;
+                bone.rotation.z -= .34 * inspectEnvelope;
+              }
+            });
           }
           muzzleLight.intensity = muzzleFlash > 0 ? 3.5 : 0;
           weaponModels.forEach((model, index) => {
@@ -4093,6 +4071,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           vfxSystem.spawnMuzzleFlash(muzzlePosition);
           weaponRecoil = Math.max(weaponRecoil, (weapon.recoil || 7) * recoilScale);
         } else {
+          knifeAttackStyle = knifeComboStep === 1 ? "slash" : "stab";
+          knifeComboStep = (knifeComboStep + 1) % 3;
           knifeSwing = weapon.interval;
           playSound("knife");
         }
