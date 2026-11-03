@@ -161,6 +161,8 @@
     .stage.is-replaying .scope-overlay {
       visibility: hidden;
     }
+    .stage.is-replaying .parry-indicator { visibility: hidden; }
+    .stage.is-replaying .domain-overlay { visibility: hidden; }
     .weapon-toast {
       position: absolute; left: 50%; bottom: 17%; transform: translateX(-50%);
       color: #dce5d1; font-size: 10px; font-weight: 700; letter-spacing: .18em;
@@ -178,6 +180,50 @@
       background: radial-gradient(circle at center, transparent 0 35%, rgba(4,6,5,.82) 35.5%, #020303 38%);
     }
     .scope-overlay[hidden] { display: none; }
+    .parry-indicator {
+      position: absolute; z-index: 3; left: 50%; bottom: 23%;
+      transform: translateX(-50%); padding: 7px 10px;
+      border: 1px solid rgba(123, 236, 232, .6); background: rgba(7, 27, 29, .72);
+      color: #a7f4ed; font-size: 9px; font-weight: 800; letter-spacing: .16em;
+      text-shadow: 0 1px 5px #000; pointer-events: none;
+    }
+    .parry-indicator[hidden] { display: none; }
+    .parry-indicator.active { box-shadow: 0 0 14px rgba(67, 218, 227, .48); }
+    .parry-indicator.depleted { border-color: rgba(255, 113, 92, .75); color: #ff9a83; }
+    .stage.sukuna-active .weapon-slots { visibility: hidden; }
+    .sukuna-hud {
+      position: absolute; z-index: 3; left: 50%; bottom: 8%;
+      transform: translateX(-50%); width: min(94%, 680px); padding: 8px 12px;
+      border: 1px solid rgba(238, 70, 69, .65); background: rgba(32, 7, 11, .8);
+      color: #ffd1c2; font-size: 9px; font-weight: 800; letter-spacing: .12em;
+      text-align: center; text-shadow: 0 1px 5px #000; pointer-events: none;
+    }
+    .sukuna-hud[hidden] { display: none; }
+    .stage.is-replaying .sukuna-hud { visibility: hidden; }
+    .domain-overlay {
+      position: absolute; z-index: 6; inset: 0; display: grid; place-items: center;
+      overflow: hidden; background: radial-gradient(circle, rgba(151, 15, 26, .12), rgba(30, 2, 8, .88));
+      pointer-events: none;
+    }
+    .domain-overlay[hidden] { display: none; }
+    .domain-ring {
+      position: absolute; width: min(110vw, 110vh); aspect-ratio: 1;
+      border: 2px solid rgba(255, 99, 95, .82); border-radius: 50%;
+      box-shadow: 0 0 0 12px rgba(159, 24, 35, .22), 0 0 50px rgba(255, 37, 46, .52),
+        inset 0 0 50px rgba(255, 37, 46, .36);
+      animation: domain-pulse 1.8s ease-out both;
+    }
+    .domain-title {
+      z-index: 1; padding: 10px 14px; border: 1px solid #ff7b76aa;
+      background: rgba(23, 2, 7, .76); color: #ffe1d8; font-size: 12px;
+      font-weight: 900; letter-spacing: .24em; text-align: center;
+      text-shadow: 0 0 14px #f32d37;
+    }
+    @keyframes domain-pulse {
+      0% { transform: scale(.2); opacity: 0; }
+      18% { opacity: 1; }
+      100% { transform: scale(1.05); opacity: 0; }
+    }
     .scope-lens {
       position: relative; width: min(68%, 64vh); aspect-ratio: 1; overflow: hidden;
       border: 2px solid #667166; border-radius: 50%;

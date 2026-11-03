@@ -43,19 +43,45 @@ export class ReplayBuffer {
     const span = Math.max(1, newer.timestamp - older.timestamp);
     const alpha = Math.min(1, Math.max(0, (timestamp - older.timestamp) / span));
     const lerp = (a, b) => a + (b - a) * alpha;
-    const angleDelta = Math.atan2(
-      Math.sin(newer.state.player.angle - older.state.player.angle),
-      Math.cos(newer.state.player.angle - older.state.player.angle)
-    );
+    const interpolateActor = (earlier, later) => {
+      if (!earlier || !later) return earlier || later || null;
+      const angleDelta = Math.atan2(
+        Math.sin(later.angle - earlier.angle),
+        Math.cos(later.angle - earlier.angle)
+      );
+      const actor = {
+        ...earlier,
+        x: lerp(earlier.x, later.x),
+        y: lerp(earlier.y, later.y),
+        angle: earlier.angle + angleDelta * alpha
+      };
+      for (const key of ["cameraPosition", "cameraDirection"]) {
+        if (!earlier[key] || !later[key]) continue;
+        actor[key] = {
+          x: lerp(earlier[key].x, later[key].x),
+          y: lerp(earlier[key].y, later[key].y),
+          z: lerp(earlier[key].z, later[key].z)
+        };
+        if (key === "cameraDirection") {
+          const length = Math.hypot(actor[key].x, actor[key].y, actor[key].z) || 1;
+          actor[key].x /= length;
+          actor[key].y /= length;
+          actor[key].z /= length;
+        }
+      }
+      if (Number.isFinite(earlier.fov) && Number.isFinite(later.fov)) {
+        actor.fov = lerp(earlier.fov, later.fov);
+      }
+      if (Number.isFinite(earlier.pitch) && Number.isFinite(later.pitch)) {
+        actor.pitch = lerp(earlier.pitch, later.pitch);
+      }
+      return actor;
+    };
     return {
       timestamp,
       finished: elapsed >= duration,
-      player: {
-        ...older.state.player,
-        x: lerp(older.state.player.x, newer.state.player.x),
-        y: lerp(older.state.player.y, newer.state.player.y),
-        angle: older.state.player.angle + angleDelta * alpha
-      },
+      player: interpolateActor(older.state.player, newer.state.player),
+      opponent: interpolateActor(older.state.opponent, newer.state.opponent),
       enemies: older.state.enemies.map(enemy => {
         const laterEnemy = newer.state.enemies.find(item => item.id === enemy.id);
         if (!laterEnemy) return enemy;

@@ -69,12 +69,23 @@ export class NetworkManager {
       z: lerp(older.cameraDirection.z, newer.cameraDirection.z)
     };
     const directionLength = Math.hypot(direction.x, direction.y, direction.z) || 1;
+    const cameraPosition = older.cameraPosition && newer.cameraPosition
+      ? {
+          x: lerp(older.cameraPosition.x, newer.cameraPosition.x),
+          y: lerp(older.cameraPosition.y, newer.cameraPosition.y),
+          z: lerp(older.cameraPosition.z, newer.cameraPosition.z)
+        }
+      : newer.cameraPosition || older.cameraPosition;
     return {
       ...newer,
       x: lerp(older.position.x, newer.position.x),
       y: -lerp(older.position.z, newer.position.z),
       angle: older.angle + angleDelta * alpha,
       pitch: lerp(older.pitch, newer.pitch),
+      fov: Number.isFinite(older.fov) && Number.isFinite(newer.fov)
+        ? lerp(older.fov, newer.fov)
+        : newer.fov,
+      cameraPosition,
       cameraDirection: {
         x: direction.x / directionLength,
         y: direction.y / directionLength,

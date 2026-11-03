@@ -50,7 +50,8 @@ export class AudioManager {
       knife: [240, .08, .12, .16], reload: [340, .12, .05, .12],
       damage: [72, .24, .12, .32], death: [48, .7, .16, .72],
       grenade: [55, .4, .3, .92], flash: [880, .22, .09, .4],
-      footstep: [88, .045, .035, .12], hit: [190, .07, .06, .14]
+      footstep: [88, .045, .035, .12], hit: [190, .07, .06, .14],
+      parry: [720, .12, .16, .24], "parry-break": [120, .42, .24, .72]
     };
     const [frequency, duration, volume, noiseAmount] = presets[type] || presets.rifle;
     const sampleRate = this.context.sampleRate;

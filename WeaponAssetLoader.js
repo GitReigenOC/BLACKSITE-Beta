@@ -53,8 +53,8 @@ export class WeaponAssetLoader {
         emissive: "#343d32",
         emissiveIntensity: .24
       });
-      addBox([.07, .045, .34], [0, 0, -.19], bladeMaterial);
-      addBox([.055, .045, .27], [0, 0, -.49], bladeMaterial);
+      addBox([.07, .045, .34], [0, 0, -.19], bladeMaterial).name = "knife-blade";
+      addBox([.055, .045, .27], [0, 0, -.49], bladeMaterial).name = "knife-tip";
       addBox([.07, .13, .09], [0, -.075, .015], darkMaterial);
       return group;
     }
@@ -69,10 +69,11 @@ export class WeaponAssetLoader {
     );
     barrel.rotation.x = Math.PI / 2;
     barrel.position.set(0, .005, -.22 - barrelLength / 2);
+    barrel.name = "weapon-barrel";
     barrel.castShadow = true;
     group.add(barrel);
     addBox([isSniper ? .14 : .15, .12, isSniper ? .3 : .27], [0, 0, -.19]);
-    addBox([.12, .09, .2], [0, 0, .045], darkMaterial);
+    addBox([.12, .09, .2], [0, 0, .045], darkMaterial).name = "weapon-bolt";
     addBox([.075, .13, .12], [0, -.105, -.17], darkMaterial);
     addBox([.11, .13, .1], [0, -.075, .015], darkMaterial);
 
@@ -82,7 +83,7 @@ export class WeaponAssetLoader {
     } else {
       addBox([.045, .045, .09], [0, .078, -.2], darkMaterial);
     }
-    if (isShotgun) addBox([.09, .11, .16], [0, .035, -.41]);
+    if (isShotgun) addBox([.09, .11, .16], [0, .035, -.41]).name = "weapon-pump";
     return group;
   }
 
