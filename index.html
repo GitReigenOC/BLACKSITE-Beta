@@ -42,6 +42,15 @@ description: A browser-based tactical arena training game.
       <div class="crosshair" id="crosshair"></div>
       <div class="hit-marker" id="hit-marker"></div>
       <div class="hit-confirmation" id="hit-confirmation" aria-live="polite"></div>
+      <div class="achievement-toast" id="achievement-toast" hidden aria-live="polite">
+        <span class="achievement-toast__label">ACHIEVEMENT UNLOCKED</span>
+        <strong id="achievement-title"></strong>
+        <span id="achievement-description"></span>
+      </div>
+      <div class="deploy-countdown" id="deploy-countdown" hidden aria-live="assertive">
+        <strong id="countdown-number">3</strong>
+        <span id="countdown-label">GET READY</span>
+      </div>
       <div class="replay-indicator" id="replay-indicator" hidden>BEST PLAY / FINAL 10 SECONDS</div>
       <div class="weapon-toast" id="weapon-toast"></div>
       <div class="combat-message" id="combat-message" aria-live="polite"></div>
@@ -115,16 +124,16 @@ description: A browser-based tactical arena training game.
               <strong>THE POOL ROOMS</strong><span>A tiled maze of glowing cyan water.</span>
             </button>
             <button type="button" class="map-card" data-map="iron_foundry" aria-pressed="false">
-              <strong>IRON FOUNDRY</strong><span>Industrial lanes, furnace stacks, and cover.</span>
+              <strong>IRON FOUNDRY</strong><span>Enclosed steelworks with molten vats and raised catwalks.</span>
             </button>
             <button type="button" class="map-card" data-map="rooftop" aria-pressed="false">
               <strong>ROOFTOP</strong><span>An exposed high-rise training ground.</span>
             </button>
             <button type="button" class="map-card" data-map="desert_outpost" aria-pressed="false">
-              <strong>DESERT OUTPOST</strong><span>A fortified desert checkpoint with sandbag lines and watchtowers.</span>
+              <strong>DESERT OUTPOST</strong><span>A sun-baked border post with watchtowers and sandbag cover.</span>
             </button>
             <button type="button" class="map-card" data-map="subway_terminal" aria-pressed="false">
-              <strong>SUBWAY TERMINAL</strong><span>An abandoned underground station with platforms and track lanes.</span>
+              <strong>SUBWAY TERMINAL</strong><span>An underground station with platforms, tracks, signs, and a parked train.</span>
             </button>
           </div>
           <div class="menu-actions">
@@ -133,13 +142,22 @@ description: A browser-based tactical arena training game.
             <button type="button" id="infinite-button" class="button-secondary">Infinite mode</button>
             <button type="button" id="zombies-button" class="button-secondary">Zombies</button>
             <button type="button" id="shop-button" class="button-secondary">Outpost (Shop)</button>
+            <button type="button" id="loadout-button" class="button-secondary">Weapon bench</button>
             <button type="button" id="multiplayer-button" class="button-secondary">Multiplayer</button>
             <button type="button" id="settings-button" class="button-secondary">Settings</button>
             <button type="button" id="profile-button" class="button-text">View operator profile</button>
             <button type="button" id="quit-button" class="button-text">Quit</button>
           </div>
+          <p class="prototype-note">Private matches connect two browsers directly using WebRTC.</p>
+        </div>
+      </div>
+      <div class="menu-layer" id="loadout-screen" hidden>
+        <div class="menu-panel">
+          <div class="kicker">WEAPON BENCH / ARMORY</div>
+          <h1>BUILD YOUR<br>LOADOUT</h1>
+          <p>Unlock attachments in the Outpost shop, then configure each compatible weapon here.</p>
           <section class="loadout-panel" aria-label="Weapon customization">
-            <label for="loadout-weapon">LOADOUT WEAPON</label>
+            <label for="loadout-weapon">SELECT WEAPON</label>
             <select id="loadout-weapon">
               <option value="0">Assault rifle</option>
               <option value="1">Precision sniper</option>
@@ -148,19 +166,22 @@ description: A browser-based tactical arena training game.
               <option value="4">Combat knife</option>
             </select>
             <div class="attachment-options">
-              <label><input type="checkbox" data-attachment="optic"> Optic</label>
-              <label><input type="checkbox" data-attachment="suppressor"> Suppressor</label>
-              <label><input type="checkbox" data-attachment="foregrip"> Foregrip</label>
+              <label><input type="checkbox" data-attachment="optic"> Optic <span data-attachment-status="optic"></span></label>
+              <label><input type="checkbox" data-attachment="suppressor"> Suppressor <span data-attachment-status="suppressor"></span></label>
+              <label><input type="checkbox" data-attachment="foregrip"> Foregrip <span data-attachment-status="foregrip"></span></label>
             </div>
           </section>
-          <p class="prototype-note">Private matches connect two browsers directly using WebRTC.</p>
+          <div class="menu-actions">
+            <button type="button" id="loadout-shop-button" class="button-secondary">Visit Outpost shop</button>
+            <button type="button" id="loadout-back-button" class="button-secondary">Back</button>
+          </div>
         </div>
       </div>
       <div class="menu-layer" id="shop-screen" hidden>
         <div class="menu-panel menu-panel--wide">
           <div class="kicker">OUTPOST / OPERATOR ARMORY</div>
           <h1>STYLE YOUR<br>LOADOUT</h1>
-          <p>Earn credits in solo waves. Cosmetic purchases are local to this browser.</p>
+          <p>Earn credits in solo waves. Buy operator cosmetics or attachment unlocks, then equip attachments at the separate weapon bench. Purchases are local to this browser.</p>
           <div class="shop-balance">AVAILABLE CREDITS <b id="shop-credits">0</b></div>
           <div class="shop-items" id="shop-items"></div>
           <div class="menu-actions"><button type="button" id="shop-back-button" class="button-secondary">Back</button></div>

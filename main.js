@@ -96,7 +96,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       const profileModal = document.querySelector("#profile-modal");
       const settingsScreen = document.querySelector("#settings-screen");
       const shopScreen = document.querySelector("#shop-screen");
-      const menuScreens = [profileScreen, mainMenu, multiplayerMenu, serversMenu, profileModal, settingsScreen, shopScreen];
+      const loadoutScreen = document.querySelector("#loadout-screen");
+      const menuScreens = [profileScreen, mainMenu, multiplayerMenu, serversMenu, profileModal, settingsScreen, shopScreen, loadoutScreen];
       const originalArena = [
         "1111111111111111",
         "1000000000000001",
@@ -240,16 +241,16 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         }
       };
       function createFoundryGrid() {
-        const grid = createMapGrid(28);
-        for (let x = 4; x < 24; x++) {
+        const grid = createMapGrid(30);
+        for (let x = 3; x < 27; x++) {
           if (x < 10 || x > 13) grid[8][x] = "1";
-          if (x < 15 || x > 18) grid[19][x] = "1";
+          if (x < 16 || x > 19) grid[20][x] = "1";
         }
-        for (let y = 4; y < 24; y++) {
+        for (let y = 3; y < 27; y++) {
           if (y < 10 || y > 13) grid[y][9] = "1";
-          if (y < 15 || y > 18) grid[y][18] = "1";
+          if (y < 15 || y > 18) grid[y][20] = "1";
         }
-        [[5, 5], [6, 5], [21, 5], [22, 5], [5, 21], [6, 21], [21, 21], [22, 21]]
+        [[5, 5], [6, 5], [23, 5], [24, 5], [5, 23], [6, 23], [23, 23], [24, 23]]
           .forEach(([x, y]) => { grid[y][x] = "1"; });
         return grid.map(row => row.join(""));
       }
@@ -290,16 +291,16 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         return grid.map(row => row.join(""));
       }
       function createSubwayGrid() {
-        const grid = createMapGrid(26);
-        for (let x = 2; x < 24; x++) {
-          if (x < 9 || x > 12) grid[6][x] = "1";
-          if (x < 13 || x > 16) grid[20][x] = "1";
+        const grid = createMapGrid(30);
+        for (let x = 2; x < 28; x++) {
+          if (x < 10 || x > 19) grid[7][x] = "1";
+          if (x < 10 || x > 19) grid[22][x] = "1";
         }
-        for (let y = 2; y < 26; y++) {
-          if (y < 10 || y > 13) grid[y][7] = "1";
-          if (y < 14 || y > 17) grid[y][18] = "1";
+        for (let y = 2; y < 28; y++) {
+          if (y < 10 || y > 19) grid[y][9] = "1";
+          if (y < 10 || y > 19) grid[y][20] = "1";
         }
-        [[3, 3], [4, 3], [21, 3], [22, 3], [3, 22], [4, 22], [21, 22], [22, 22]]
+        [[4, 4], [5, 4], [24, 4], [25, 4], [4, 25], [5, 25], [24, 25], [25, 25]]
           .forEach(([x, y]) => { grid[y][x] = "1"; });
         return grid.map(row => row.join(""));
       }
@@ -341,21 +342,24 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         floor: "#55493b", floorLine: "#756146", wall: "#77614b", wallLine: "#4b3b2e",
         fog: "#66534a", background: "#362a20", ambient: "#c5a17c", sun: "#ffb36b"
       }, {
+        outdoor: false,
         collisionBoxes: [
           { minX: 11, maxX: 13, minY: 11, maxY: 13, minHeight: 0, maxHeight: 1.4, kind: "vat" },
-          { minX: 14, maxX: 16, minY: 14, maxY: 16, minHeight: 0, maxHeight: 1.4, kind: "vat" },
+          { minX: 16, maxX: 18, minY: 16, maxY: 18, minHeight: 0, maxHeight: 1.4, kind: "vat" },
           { minX: 5, maxX: 7, minY: 5, maxY: 7, minHeight: 0, maxHeight: 2.8, kind: "pillar" },
-          { minX: 21, maxX: 23, minY: 5, maxY: 7, minHeight: 0, maxHeight: 2.8, kind: "pillar" },
+          { minX: 23, maxX: 25, minY: 5, maxY: 7, minHeight: 0, maxHeight: 2.8, kind: "pillar" },
           { minX: 5, maxX: 7, minY: 21, maxY: 23, minHeight: 0, maxHeight: 2.8, kind: "pillar" },
-          { minX: 21, maxX: 23, minY: 21, maxY: 23, minHeight: 0, maxHeight: 2.8, kind: "pillar" }
+          { minX: 23, maxX: 25, minY: 23, maxY: 25, minHeight: 0, maxHeight: 2.8, kind: "pillar" },
+          { minX: 4, maxX: 6, minY: 11.5, maxY: 14.5, minHeight: 0, maxHeight: 3.4, kind: "furnace" },
+          { minX: 24, maxX: 26, minY: 11.5, maxY: 14.5, minHeight: 0, maxHeight: 3.4, kind: "furnace" }
         ],
         hazards: [
           { minX: 10.25, maxX: 13.75, minY: 10.25, maxY: 13.75, damagePerSecond: 22 },
-          { minX: 13.25, maxX: 16.75, minY: 13.25, maxY: 16.75, damagePerSecond: 22 }
+          { minX: 15.25, maxX: 18.75, minY: 15.25, maxY: 18.75, damagePerSecond: 22 }
         ],
         elevationZones: [
           { minX: 3, maxX: 9, minY: 13.5, maxY: 15.5, height: 2 },
-          { minX: 18, maxX: 25, minY: 13.5, maxY: 15.5, height: 2 },
+          { minX: 20, maxX: 27, minY: 13.5, maxY: 15.5, height: 2 },
           { minX: 11, maxX: 15, minY: 3, maxY: 6, height: 2 }
         ],
         fogNear: 5, fogFar: 24, ambientPower: .35, sunPower: 1.6
@@ -388,15 +392,18 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         floor: "#3d4948", floorLine: "#697271", wall: "#56615f", wallLine: "#303938",
         fog: "#454e4e", background: "#242d2d", ambient: "#91a5a1", sun: "#c5d0c9"
       }, {
+        outdoor: false,
         collisionBoxes: [
-          { minX: 10, maxX: 11.5, minY: 10, maxY: 17, minHeight: 0, maxHeight: 2.2, kind: "platform-pillar" },
-          { minX: 15.5, maxX: 17, minY: 10, maxY: 17, minHeight: 0, maxHeight: 2.2, kind: "platform-pillar" },
-          { minX: 11, maxX: 15, minY: 7, maxY: 8, minHeight: 0, maxHeight: .8, kind: "bench" },
-          { minX: 12, maxX: 16, minY: 19, maxY: 20, minHeight: 0, maxHeight: .8, kind: "bench" }
+          { minX: 10, maxX: 11.5, minY: 10, maxY: 19, minHeight: 0, maxHeight: 2.2, kind: "platform-pillar" },
+          { minX: 18.5, maxX: 20, minY: 10, maxY: 19, minHeight: 0, maxHeight: 2.2, kind: "platform-pillar" },
+          { minX: 3, maxX: 7, minY: 12.5, maxY: 14.5, minHeight: 0, maxHeight: .8, kind: "bench" },
+          { minX: 22, maxX: 26, minY: 15.5, maxY: 17.5, minHeight: 0, maxHeight: .8, kind: "bench" },
+          { minX: 11.8, maxX: 16.2, minY: 22.3, maxY: 28.7, minHeight: 0, maxHeight: 2.2, kind: "train" }
         ],
         hazards: [],
         elevationZones: [],
-        fogNear: 8, fogFar: 30, ambientPower: .42, sunPower: .8
+        fogNear: 8, fogFar: 30, ambientPower: .42, sunPower: .8,
+        ceiling: "#202827", floorRoughness: .48, wallRoughness: .62
       });
       mapDefinitions.foundry = mapDefinitions.iron_foundry;
       let activeMapId = "arena";
@@ -702,7 +709,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           const vatMaterial = cachedMaterial("foundry-molten", "#b94c1e", {
             roughness: .28, metalness: .35, emissive: "#ff4a08", emissiveIntensity: 2.2
           });
-          const vatLocations = [[12, 12], [15, 15]];
+          const vatLocations = [[12, 12], [17, 17]];
           for (const [x, y] of vatLocations) {
             const vat = new THREE.Mesh(
               cachedBoxGeometry(2.4, .72, 2.4),
@@ -724,11 +731,38 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             dynamicMapLights.push(light);
             light.userData.baseIntensity = 4.5;
           }
+          const furnaceMaterial = cachedMaterial("foundry-furnace-steel", "#343b39", {
+            roughness: .48, metalness: .72
+          });
+          const furnaceGlow = cachedMaterial("foundry-furnace-glow", "#ed632d", {
+            roughness: .34, emissive: "#ff3b0b", emissiveIntensity: 1.4
+          });
+          for (const x of [5, 25]) {
+            const furnace = new THREE.Group();
+            const body = new THREE.Mesh(cachedBoxGeometry(1.7, 2.6, 2.2), furnaceMaterial);
+            body.position.y = 1.3;
+            body.castShadow = true;
+            body.receiveShadow = true;
+            const mouth = new THREE.Mesh(cachedBoxGeometry(.92, 1.1, .08), furnaceGlow);
+            mouth.position.set(0, 1.25, 1.14);
+            const stack = new THREE.Mesh(cachedBoxGeometry(.72, 1.25, .72), furnaceMaterial);
+            stack.position.set(0, 3.2, -.24);
+            stack.castShadow = true;
+            furnace.add(body, mouth, stack);
+            furnace.position.set(x, 0, -13);
+            mapGroup.add(furnace);
+            mapObstacleMeshes.push(body, mouth, stack);
+            const furnaceLight = new THREE.PointLight("#ff5a20", 2.6, 7, 2);
+            furnaceLight.position.set(x, 1.5, -11.8);
+            mapGroup.add(furnaceLight);
+            dynamicMapLights.push(furnaceLight);
+            furnaceLight.userData.baseIntensity = 2.6;
+          }
           const catwalkMaterial = cachedMaterial("foundry-catwalk", "#62594c", {
             roughness: .68, metalness: .48
           });
           for (const [x, y, length, depth] of [
-            [6, 14.5, 6, 1.4], [21, 14.5, 6, 1.4], [13.5, 4.5, 1.4, 5]
+            [6, 15, 6, 1.4], [23, 15, 6, 1.4], [14.5, 4.5, 1.4, 5]
           ]) {
             const catwalk = new THREE.Mesh(cachedBoxGeometry(length, .18, depth), catwalkMaterial);
             catwalk.position.set(x, 2, -y);
@@ -743,8 +777,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
               mapGroup.add(support);
             }
           }
+        }
 
-          if (mapId === "desert_outpost") {
+        if (mapId === "desert_outpost") {
             const sandbagMaterial = cachedMaterial("outpost-sandbags", "#9b8052", { roughness: .98 });
             for (const [x, y, width, depth] of [[13, 5, 4, 2], [15, 22, 4, 2]]) {
               const barricade = new THREE.Mesh(cachedBoxGeometry(width, 1.1, depth), sandbagMaterial);
@@ -788,15 +823,15 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
               dynamicMapLights.push(light);
               light.userData.baseIntensity = 1.5;
             });
-          }
+        }
 
-          if (mapId === "subway_terminal") {
+        if (mapId === "subway_terminal") {
             const pillarMaterial = cachedMaterial("subway-pillar", "#525c5a", {
               roughness: .7, metalness: .34
             });
-            for (const x of [10.75, 16.25]) {
-              const pillar = new THREE.Mesh(cachedBoxGeometry(1.5, 2.2, 7), pillarMaterial);
-              pillar.position.set(x, 1.1, -13.5);
+            for (const x of [10.75, 19.25]) {
+              const pillar = new THREE.Mesh(cachedBoxGeometry(1.5, 2.2, 9), pillarMaterial);
+              pillar.position.set(x, 1.1, -14.5);
               pillar.castShadow = true;
               pillar.receiveShadow = true;
               mapGroup.add(pillar);
@@ -805,7 +840,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             const benchMaterial = cachedMaterial("subway-bench", "#35423f", {
               roughness: .46, metalness: .5
             });
-            for (const [x, y] of [[13, 7.5], [14, 19.5]]) {
+            for (const [x, y] of [[5, 13.5], [24, 16.5]]) {
               const bench = new THREE.Mesh(cachedBoxGeometry(4, .55, .9), benchMaterial);
               bench.position.set(x, .48, -y);
               bench.castShadow = true;
@@ -820,19 +855,50 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
               rail.position.set(x, .02, -depth / 2);
               mapGroup.add(rail);
             }
+            const sleeperMaterial = cachedMaterial("subway-sleeper", "#49453d", {
+              roughness: .88, metalness: .14
+            });
+            for (let y = 2.5; y < depth - 2; y += 1.35) {
+              const sleeper = new THREE.Mesh(cachedBoxGeometry(5.2, .08, .22), sleeperMaterial);
+              sleeper.position.set(14, .015, -y);
+              mapGroup.add(sleeper);
+            }
+            const trainBody = new THREE.Mesh(
+              cachedBoxGeometry(4.4, 2.1, 6.4),
+              cachedMaterial("subway-train-body", "#364344", { roughness: .42, metalness: .58 })
+            );
+            trainBody.position.set(14, 1.12, -25.5);
+            trainBody.castShadow = true;
+            mapGroup.add(trainBody);
+            mapObstacleMeshes.push(trainBody);
+            const trainWindowMaterial = cachedMaterial("subway-train-window", "#72bcc0", {
+              roughness: .24, metalness: .38, emissive: "#20565b", emissiveIntensity: .55
+            });
+            for (const x of [12.35, 13.45, 14.55, 15.65]) {
+              const window = new THREE.Mesh(cachedBoxGeometry(.72, .82, .035), trainWindowMaterial);
+              window.position.set(x, 1.45, -22.27);
+              mapGroup.add(window);
+            }
+            const signMaterial = cachedMaterial("subway-sign", "#172b2c", {
+              roughness: .5, metalness: .25, emissive: "#22666a", emissiveIntensity: .45
+            });
+            for (const [x, y, width] of [[5, 6, 4], [24, 6, 4], [5, 23, 4], [24, 23, 4]]) {
+              const sign = new THREE.Mesh(cachedBoxGeometry(width, .7, .12), signMaterial);
+              sign.position.set(x, 3.25, -y);
+              mapGroup.add(sign);
+            }
             const tileMaterial = cachedMaterial("subway-platform-tile", "#a9a18b", { roughness: .78 });
-            for (const y of [8.5, 18.5]) {
-              const warningStrip = new THREE.Mesh(cachedBoxGeometry(10, .025, .24), tileMaterial);
+            for (const y of [8.5, 20.5]) {
+              const warningStrip = new THREE.Mesh(cachedBoxGeometry(9, .025, .24), tileMaterial);
               warningStrip.position.set(width / 2, .01, -y);
               mapGroup.add(warningStrip);
             }
-            for (const [x, y, color] of [[5, 5, "#4ac6c1"], [21, 22, "#f2ae61"], [21, 5, "#5bb9db"]]) {
+            for (const [x, y, color] of [[5, 5, "#4ac6c1"], [24, 24, "#f2ae61"], [24, 5, "#5bb9db"]]) {
               const lamp = new THREE.PointLight(color, 2.1, 10, 2);
               lamp.position.set(x, 3.1, -y);
               mapGroup.add(lamp);
               dynamicMapLights.push(lamp);
               lamp.userData.baseIntensity = 2.1;
-            }
           }
         }
 
@@ -998,10 +1064,16 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function updateLoadoutControls() {
         document.querySelectorAll("[data-attachment]").forEach(input => {
-          input.checked = Boolean(weapons[loadoutWeaponIndex].attachments[input.dataset.attachment]);
-          input.disabled = (input.dataset.attachment === "optic" &&
+          const attachment = input.dataset.attachment;
+          const compatible = loadoutWeaponIndex !== 4 && !((attachment === "optic" &&
             (loadoutWeaponIndex === 2 || loadoutWeaponIndex === 4)) ||
-            (input.dataset.attachment === "suppressor" && loadoutWeaponIndex === 4);
+            (attachment === "suppressor" && loadoutWeaponIndex === 4));
+          const unlocked = ownedAttachments.has(attachment);
+          input.checked = Boolean(weapons[loadoutWeaponIndex].attachments[attachment]);
+          input.disabled = !compatible || !unlocked;
+          const status = document.querySelector(`[data-attachment-status="${attachment}"]`);
+          if (status) status.textContent = !compatible ? "NOT COMPATIBLE"
+            : unlocked ? "" : "LOCKED - OUTPOST";
         });
       }
 
@@ -1055,6 +1127,31 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             const model = weaponAssetLoader.createInstance(index);
             if (!model) return;
             holder.add(model);
+            if (index !== 4) {
+              const attachmentMaterial = cachedMaterial("weapon-attachment-dark", "#252c2b", {
+                roughness: .42, metalness: .68
+              });
+              const glassMaterial = cachedMaterial("weapon-attachment-glass", "#5cbec2", {
+                roughness: .2, metalness: .24, emissive: "#19494c", emissiveIntensity: .65
+              });
+              const optic = new THREE.Group();
+              optic.name = "weapon-optic";
+              const opticBody = new THREE.Mesh(cachedBoxGeometry(.11, .075, .12), attachmentMaterial);
+              opticBody.position.set(0, .105, -.2);
+              const opticGlass = new THREE.Mesh(cachedBoxGeometry(.065, .018, .065), glassMaterial);
+              opticGlass.position.set(0, .147, -.2);
+              optic.add(opticBody, opticGlass);
+              const suppressor = new THREE.Mesh(
+                cachedCylinderGeometry(.04, .04, .28, 10), attachmentMaterial
+              );
+              suppressor.name = "weapon-suppressor";
+              suppressor.rotation.x = Math.PI / 2;
+              suppressor.position.set(0, .005, -.48);
+              const foregrip = new THREE.Mesh(cachedBoxGeometry(.07, .16, .08), attachmentMaterial);
+              foregrip.name = "weapon-foregrip";
+              foregrip.position.set(0, -.105, -.32);
+              model.add(optic, suppressor, foregrip);
+            }
             model.traverse(object => {
               if (!object.isMesh) return;
               const partName = object.name.toLowerCase();
@@ -1098,6 +1195,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       let resultSubmitted = false;
       const replayGhosts = new Map();
       let running = false, locallyPaused = false, gameOver = false, pointerLockUnavailable = false, wave = 0, lastTime = 0;
+      let deploymentCountdownToken = 0;
       let fireCooldown = 0, reloadTimer = 0, hurtFlash = 0, muzzleFlash = 0;
       let parryCharges = 5, parryCooldown = 0, parryPulse = 0;
       let hitMarkerTimeout = 0, hitConfirmationTimeout = 0;
@@ -1125,11 +1223,25 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         { id: "skin-camo", label: "Field Camo", type: "skin", color: "#788b52", price: 4000 },
         { id: "camo-arctic", label: "Arctic Camo", type: "camo", color: "#b5d3d4", price: 6000 },
         { id: "camo-ember", label: "Ember Camo", type: "camo", color: "#ca583c", price: 8000 },
-        { id: "camo-obsidian", label: "Obsidian Camo", type: "camo", color: "#292f38", price: 10000 }
+        { id: "camo-obsidian", label: "Obsidian Camo", type: "camo", color: "#292f38", price: 10000 },
+        { id: "attachment-optic", label: "Reflex Optic", type: "attachment", attachment: "optic", color: "#4b8c91", price: 900 },
+        { id: "attachment-suppressor", label: "Suppressor", type: "attachment", attachment: "suppressor", color: "#41494b", price: 1200 },
+        { id: "attachment-foregrip", label: "Angled Foregrip", type: "attachment", attachment: "foregrip", color: "#6d695d", price: 700 }
       ];
+      const achievementDetails = {
+        first_blood: { title: "First Blood", description: "Eliminate your first hostile." },
+        headshot: { title: "Dead Center", description: "Earn a headshot elimination." },
+        backstab: { title: "Behind You", description: "Earn a backstab elimination." },
+        streak_three: { title: "UAV Operator", description: "Reach a three-elimination streak." },
+        streak_five: { title: "Air Support", description: "Reach a five-elimination streak." }
+      };
       let ownedCosmetics = new Set();
+      let ownedAttachments = new Set();
+      let unlockedAchievements = new Set();
       let equippedSkin = "";
       let equippedCamo = "";
+      let shopReturnScreen = mainMenu;
+      let achievementTimeout = 0;
       let bossBarFill = document.querySelector("#boss-health-fill");
       let creditsDisplay = document.querySelector("#credits");
       const controlSettings = { mouseSensitivity: 1, scopeSensitivity: .25, fieldOfView: 82, masterVolume: .7 };
@@ -1153,11 +1265,25 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const savedProgression = JSON.parse(localStorage.getItem("blacksite.progression") || "{}");
         credits = Number.isSafeInteger(savedProgression.credits) && savedProgression.credits >= 0
           ? savedProgression.credits : 0;
-        const validCosmeticIds = new Set(cosmeticItems.map(item => item.id));
+        const validCosmeticIds = new Set(cosmeticItems.filter(item => item.type !== "attachment").map(item => item.id));
         ownedCosmetics = new Set(Array.isArray(savedProgression.owned)
           ? savedProgression.owned.filter(id => validCosmeticIds.has(id)) : []);
+        const validAttachmentIds = new Set(cosmeticItems.filter(item => item.type === "attachment").map(item => item.attachment));
+        ownedAttachments = new Set(Array.isArray(savedProgression.attachments)
+          ? savedProgression.attachments.filter(name => validAttachmentIds.has(name)) : []);
+        const validAchievementIds = new Set(Object.keys(achievementDetails));
+        unlockedAchievements = new Set(Array.isArray(savedProgression.achievements)
+          ? savedProgression.achievements.filter(id => validAchievementIds.has(id)) : []);
         equippedSkin = ownedCosmetics.has(savedProgression.equippedSkin) ? savedProgression.equippedSkin : "";
         equippedCamo = ownedCosmetics.has(savedProgression.equippedCamo) ? savedProgression.equippedCamo : "";
+        if (Array.isArray(savedProgression.weaponAttachments)) {
+          savedProgression.weaponAttachments.forEach((attachments, index) => {
+            if (!attachments || !weapons[index]) return;
+            for (const name of Object.keys(weapons[index].attachments)) {
+              weapons[index].attachments[name] = ownedAttachments.has(name) && attachments[name] === true;
+            }
+          });
+        }
       } catch (error) {
         console.warn("Saved operator progression could not be loaded.", error);
       }
@@ -1199,7 +1325,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       function saveProgression() {
         try {
           localStorage.setItem("blacksite.progression", JSON.stringify({
-            credits, owned: [...ownedCosmetics], equippedSkin, equippedCamo
+            credits, owned: [...ownedCosmetics], attachments: [...ownedAttachments], achievements: [...unlockedAchievements],
+            equippedSkin, equippedCamo,
+            weaponAttachments: weapons.map(weapon => ({ ...weapon.attachments }))
           }));
         } catch (error) {
           console.warn("Operator progression could not be saved.", error);
@@ -1331,6 +1459,11 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         container.replaceChildren();
         document.querySelector("#shop-credits").textContent = String(credits);
         for (const item of cosmeticItems) {
+          const attachmentItem = item.type === "attachment";
+          const owned = attachmentItem
+            ? ownedAttachments.has(item.attachment)
+            : ownedCosmetics.has(item.id);
+          const equipped = !attachmentItem && (equippedSkin === item.id || equippedCamo === item.id);
           const row = document.createElement("article");
           row.className = "shop-item";
           const preview = document.createElement("span");
@@ -1341,19 +1474,17 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           const title = document.createElement("strong");
           title.textContent = item.label;
           const price = document.createElement("span");
-          price.textContent = ownedCosmetics.has(item.id)
-            ? equippedSkin === item.id || equippedCamo === item.id ? "EQUIPPED" : "OWNED"
+          price.textContent = owned
+            ? equipped ? "EQUIPPED" : attachmentItem ? "UNLOCKED FOR WEAPON BENCH" : "OWNED"
             : `${item.price.toLocaleString()} CREDITS`;
           description.append(title, price);
           const action = document.createElement("button");
           action.type = "button";
           action.dataset.cosmetic = item.id;
-          action.textContent = ownedCosmetics.has(item.id)
-            ? equippedSkin === item.id || equippedCamo === item.id ? "EQUIPPED" : "EQUIP"
+          action.textContent = owned
+            ? equipped ? "EQUIPPED" : attachmentItem ? "UNLOCKED" : "EQUIP"
             : credits >= item.price ? "PURCHASE" : "LOCKED";
-          action.disabled = (ownedCosmetics.has(item.id) &&
-            (equippedSkin === item.id || equippedCamo === item.id)) ||
-            (!ownedCosmetics.has(item.id) && credits < item.price);
+          action.disabled = (owned && (equipped || attachmentItem)) || (!owned && credits < item.price);
           row.append(preview, description, action);
           container.append(row);
         }
@@ -1362,6 +1493,17 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       function useCosmetic(id) {
         const item = cosmeticItems.find(candidate => candidate.id === id);
         if (!item) return;
+        if (item.type === "attachment") {
+          if (!ownedAttachments.has(item.attachment)) {
+            if (credits < item.price) return;
+            credits -= item.price;
+            ownedAttachments.add(item.attachment);
+          }
+          saveProgression();
+          updateLoadoutControls();
+          renderShop();
+          return;
+        }
         if (!ownedCosmetics.has(id)) {
           if (credits < item.price) return;
           credits -= item.price;
@@ -1462,6 +1604,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         locallyPaused = false;
         gameOver = false;
         respawnCountdown = 0;
+        deploymentCountdownToken++;
+        document.querySelector("#deploy-countdown").hidden = true;
         deactivateSukunaPower(false);
         firing = false;
         aiming = false;
@@ -1633,6 +1777,26 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         hitConfirmationTimeout = scheduleTimeout(() => confirmation.classList.remove("visible"), 1000);
       }
 
+      function unlockAchievement(id) {
+        if (unlockedAchievements.has(id)) return;
+        const achievement = achievementDetails[id];
+        if (!achievement) return;
+        unlockedAchievements.add(id);
+        document.querySelector("#achievement-title").textContent = achievement.title;
+        document.querySelector("#achievement-description").textContent = achievement.description;
+        const toast = document.querySelector("#achievement-toast");
+        toast.hidden = false;
+        toast.classList.remove("visible");
+        void toast.offsetWidth;
+        toast.classList.add("visible");
+        cancelScheduledTimeout(achievementTimeout);
+        achievementTimeout = scheduleTimeout(() => {
+          toast.classList.remove("visible");
+          toast.hidden = true;
+        }, 3200);
+        saveProgression();
+      }
+
       function showHitMarker() {
         hitMarker.classList.remove("visible");
         void hitMarker.offsetWidth;
@@ -1644,10 +1808,12 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       function awardKillstreak() {
         killStreak++;
         if (killStreak === 3) {
+          unlockAchievement("streak_three");
           enemies.forEach(enemy => { enemy.uavRevealTimer = 7; });
           setCombatMessage("UAV ACTIVE / HOSTILES REVEALED", 2200);
           playSound("hit", undefined, { volume: .8 });
         } else if (killStreak === 5) {
+          unlockAchievement("streak_five");
           const targets = enemies.slice(0, 2);
           targets.forEach(enemy => {
             const position = new THREE.Vector3(enemy.x, .2, -enemy.y);
@@ -1885,7 +2051,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         document.querySelector("#health").textContent = player.health;
         const fill = document.querySelector("#health-fill");
         fill.style.width = `${player.health}%`;
-        fill.style.background = player.health < 35 ? "#dd6d58" : "#c1e16d";
+        fill.style.background = player.health < 35 ? "#dd6d58" : "#57c2c8";
         document.querySelector("#damage-overlay").classList.add("visible");
         scheduleTimeout(() => document.querySelector("#damage-overlay").classList.remove("visible"), 300);
         setCombatMessage(`HIT BY ${weapon.short}`);
@@ -2825,6 +2991,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           idle: enemyRigAnimations.find(clip => /idle_gun|idle|stand|breath/i.test(clip.name)),
           walk: enemyRigAnimations.find(clip => /walk|move/i.test(clip.name)),
           run: enemyRigAnimations.find(clip => /run|sprint/i.test(clip.name)),
+          jump: enemyRigAnimations.find(clip => /jump|leap/i.test(clip.name)),
           shoot: enemyRigAnimations.find(clip => /shoot|fire|attack/i.test(clip.name)),
           reload: enemyRigAnimations.find(clip => /reload/i.test(clip.name)),
           stab: enemyRigAnimations.find(clip => /punch_right|stab/i.test(clip.name)),
@@ -2931,11 +3098,11 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             playerRigModel.traverse(object => {
               if (object.isBone) bones.push(object);
               if (object.isMesh) {
-                object.visible = /^Swat_Torso/i.test(object.name);
+                object.visible = /arm|hand/i.test(object.name) && !/torso/i.test(object.name);
                 object.userData.enemyRef = null;
               }
+              if (object.userData.isHitbox) object.visible = false;
             });
-            playerRigModel.userData.hitboxes.visible = false;
             playerRigModel.scale.setScalar(.45);
             playerRigModel.position.set(0, -1, -1);
             playerRigModel.rotation.set(0, Math.PI, 0);
@@ -2946,12 +3113,11 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             };
             scene.remove(playerRigModel);
             camera.add(playerRigModel);
-            weaponAnchor.parent?.remove(weaponAnchor);
-            const hand = playerRigModel.userData.weaponHand;
-            hand.add(weaponAnchor);
-            weaponAnchor.position.set(0, .05, 0);
-            weaponAnchor.rotation.set(0, 0, 0);
-            weaponAnchor.scale.setScalar(1 / .45);
+            if (weaponAnchor.parent !== camera) {
+              weaponAnchor.parent?.remove(weaponAnchor);
+              camera.add(weaponAnchor);
+            }
+            weaponAnchor.scale.setScalar(1);
             playerRigModel.visible = true;
             playerRigModel.userData.mixer.update(0);
           }
@@ -2965,7 +3131,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           playerRigActor.weaponIndex = player.weaponIndex;
           playerRigActor.animationState = playerAnimationState;
           if (playerRigModel.userData.firstPerson) {
-            playerRigModel.position.set(0, -1, -1);
+            playerRigModel.position.set(0, -1 - Math.min(.12, jumpHeight * .12), -1);
             playerRigModel.rotation.set(0, Math.PI, 0);
           } else {
             playerRigModel.position.set(player.x, getMapElevation(player.x, player.y) + rooftopFallHeight, -player.y);
@@ -3165,7 +3331,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         return safest[Math.floor(Math.random() * safest.length)];
       }
 
-      function eliminateEnemy(enemy, { weaponIndex = player.weaponIndex, headshot = false, noScope = false } = {}) {
+      function eliminateEnemy(enemy, {
+        weaponIndex = player.weaponIndex, headshot = false, backstab = false, noScope = false
+      } = {}) {
         if (enemy.trainingDummy) {
           enemy.health = enemy.maxHealth;
           enemy.underFire = false;
@@ -3195,9 +3363,12 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           }
         }
         player.score += 100;
+        unlockAchievement("first_blood");
+        if (headshot) unlockAchievement("headshot");
+        if (backstab) unlockAchievement("backstab");
         awardKillstreak();
         replayBuffer.recordEvent(performance.now(), {
-          type: "kill", weapon: weaponIndex, headshot, noScope, x: enemy.x, y: enemy.y
+          type: "kill", weapon: weaponIndex, headshot, backstab, noScope, x: enemy.x, y: enemy.y
         });
         document.querySelector("#score").textContent = String(player.score).padStart(4, "0");
         return true;
@@ -3547,7 +3718,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         player.health = 100;
         document.querySelector("#health").textContent = "100";
         document.querySelector("#health-fill").style.width = "100%";
-        document.querySelector("#health-fill").style.background = "#c1e16d";
+        document.querySelector("#health-fill").style.background = "#57c2c8";
         if (wave % 5 === 0 && !waveRewardsAwarded.has(wave)) {
           credits += 100;
           waveRewardsAwarded.add(wave);
@@ -3973,8 +4144,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             weaponLagX * .00045;
           targetWeaponPosition.x *= viewModelScale;
           targetWeaponPosition.y *= viewModelScale;
-          if (playerRigModel?.userData.firstPerson) weaponAnchor.position.set(0, .05, 0);
-          else weaponAnchor.position.lerp(targetWeaponPosition, .22);
+          targetWeaponPosition.y -= Math.min(.12, jumpHeight * .11);
+          weaponAnchor.position.lerp(targetWeaponPosition, .22);
           const knifeProgress = weapon.melee && knifeSwing > 0
             ? THREE.MathUtils.clamp(1 - knifeSwing / weapon.interval, 0, 1)
             : 0;
@@ -4007,7 +4178,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           muzzleLight.intensity = muzzleFlash > 0 ? 3.5 : 0;
           weaponModels.forEach((model, index) => {
             model.visible = !sukunaActive && index === player.weaponIndex && !(aiming && hasScope());
-            const firearmScale = (weapon.melee ? 1 : 1.65) * viewModelScale;
+            const firearmScale = (weapon.melee ? 1 : .98) * viewModelScale;
             model.scale.setScalar(index === player.weaponIndex ? firearmScale * inspectScale : 1);
             let magazine = null;
             model.traverse(object => {
@@ -4184,6 +4355,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             eliminateEnemy(enemy, {
               weaponIndex: player.weaponIndex,
               headshot: hitZone === "head",
+              backstab,
               noScope
             });
             setCombatMessage("TARGET ELIMINATED", 650);
@@ -4348,7 +4520,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           document.querySelector("#health").textContent = String(Math.ceil(player.health));
           const healthFill = document.querySelector("#health-fill");
           healthFill.style.width = `${player.health}%`;
-          healthFill.style.background = player.health < 35 ? "#dd6d58" : "#c1e16d";
+          healthFill.style.background = player.health < 35 ? "#dd6d58" : "#57c2c8";
           if (player.health === 0) {
             playSound("death");
             endGame();
@@ -4467,7 +4639,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           document.querySelector("#health").textContent = player.health;
           const fill = document.querySelector("#health-fill");
           fill.style.width = `${player.health}%`;
-          fill.style.background = player.health < 35 ? "#dd6d58" : "#c1e16d";
+          fill.style.background = player.health < 35 ? "#dd6d58" : "#57c2c8";
           if (player.health === 0) {
             playSound("death");
             endGame();
@@ -4485,7 +4657,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           document.querySelector("#objective").textContent = "Sector clear - next wave inbound";
           spawnWave();
         }
-        playerAnimationState = reloadKind === "reload" ? "reload"
+        playerAnimationState = jumpHeight > 0 ? "jump"
+          : reloadKind === "reload" ? "reload"
           : firing && fireCooldown > 0 ? "shoot"
             : moving ? sprinting ? "run" : "walk" : "idle";
         const replayEnemies = enemies.map(enemy => ({
@@ -4588,10 +4761,40 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         requestAnimationFrame(frame);
       }
 
+      function beginDeploymentCountdown(label = "GET READY") {
+        const countdown = document.querySelector("#deploy-countdown");
+        const number = document.querySelector("#countdown-number");
+        const caption = document.querySelector("#countdown-label");
+        const token = ++deploymentCountdownToken;
+        const steps = ["3", "2", "1", "START"];
+        caption.textContent = label;
+        countdown.hidden = false;
+        const showStep = index => {
+          if (token !== deploymentCountdownToken) return;
+          number.textContent = steps[index];
+          number.classList.remove("pulse");
+          void number.offsetWidth;
+          number.classList.add("pulse");
+          if (index === steps.length - 1) {
+            scheduleTimeout(() => {
+              if (token !== deploymentCountdownToken) return;
+              countdown.hidden = true;
+              running = true;
+              lastTime = performance.now();
+            }, 550);
+            return;
+          }
+          scheduleTimeout(() => showStep(index + 1), 900);
+        };
+        showStep(0);
+      }
+
       function startGame(requestedMode = gameMode, fresh = gameOver, {
         acquirePointerLock = true,
-        spawnPosition = null
+        spawnPosition = null,
+        countdownLabel = "GET READY"
       } = {}) {
+        const needsCountdown = fresh || gameOver;
         if (fresh || gameOver) {
           teardownMatch(false);
           if (["waves", "training", "infinite", "zombies"].includes(requestedMode) &&
@@ -4606,6 +4809,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             throw new Error(`The assigned spawn is invalid for map "${activeMapId}".`);
           }
           player.reset(spawn);
+          player.angle = Math.PI / 2;
           if (networkConnection?.open) {
             const opponentSpawn = getPlayerSpawnPosition(networkRole === "guest" ? "host" : "guest");
             player.angle = Math.atan2(opponentSpawn.y - spawn.y, opponentSpawn.x - spawn.x);
@@ -4661,7 +4865,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           document.querySelector("#flash-count").textContent = flashbangs;
           document.querySelector("#health").textContent = "100";
           document.querySelector("#health-fill").style.width = "100%";
-          document.querySelector("#health-fill").style.background = "#c1e16d";
+          document.querySelector("#health-fill").style.background = "#57c2c8";
           document.querySelector("#wave").textContent = "WAVE 01";
           document.querySelector("#score").textContent = "0000";
           updateWeaponHud();
@@ -4670,7 +4874,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         firing = false;
         aiming = false;
         locallyPaused = false;
-        running = true;
+        running = !needsCountdown;
         menuScreens.forEach(menu => { menu.hidden = true; });
         overlay.hidden = true;
         updateAimHud();
@@ -4709,6 +4913,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             pointerLockRequest.catch(() => { pointerLockUnavailable = true; });
           }
         }
+        if (needsCountdown) beginDeploymentCountdown(countdownLabel);
       }
 
       function pauseGame() {
@@ -4790,19 +4995,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           }, 1800);
         }
         if (autoRespawn) {
-          respawnCountdown = 3;
-          const updateRespawnCountdown = () => {
-            if (!gameOver || running) return;
-            if (respawnCountdown === 0) {
-              startGame(gameMode, true);
-              return;
-            }
-            document.querySelector("#overlay-copy").textContent =
-              `RESPAWNING IN ${respawnCountdown}...`;
-            respawnCountdown--;
-            scheduleTimeout(updateRespawnCountdown, 1000);
-          };
-          updateRespawnCountdown();
+          startGame(gameMode, true, { acquirePointerLock: false, countdownLabel: "RESPAWNING" });
         }
         if (document.pointerLockElement === canvas) document.exitPointerLock();
       }
@@ -4832,8 +5025,20 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       document.querySelector("#training-button").addEventListener("click", () => startGame("training", true));
       document.querySelector("#infinite-button").addEventListener("click", () => startGame("infinite", true));
       document.querySelector("#zombies-button").addEventListener("click", () => startGame("zombies", true));
-      document.querySelector("#shop-button").addEventListener("click", () => showMenu(shopScreen));
-      document.querySelector("#shop-back-button").addEventListener("click", () => showMenu(mainMenu));
+      document.querySelector("#shop-button").addEventListener("click", () => {
+        shopReturnScreen = mainMenu;
+        showMenu(shopScreen);
+      });
+      document.querySelector("#shop-back-button").addEventListener("click", () => showMenu(shopReturnScreen));
+      document.querySelector("#loadout-button").addEventListener("click", () => {
+        updateLoadoutControls();
+        showMenu(loadoutScreen);
+      });
+      document.querySelector("#loadout-shop-button").addEventListener("click", () => {
+        shopReturnScreen = loadoutScreen;
+        showMenu(shopScreen);
+      });
+      document.querySelector("#loadout-back-button").addEventListener("click", () => showMenu(mainMenu));
       document.querySelector("#shop-items").addEventListener("click", event => {
         const button = event.target.closest("[data-cosmetic]");
         if (button && !button.disabled) useCosmetic(button.dataset.cosmetic);
@@ -4931,6 +5136,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             return;
           }
           applyWeaponAttachments(loadoutWeaponIndex);
+          saveProgression();
           if (loadoutWeaponIndex === player.weaponIndex && aiming) updateAimHud();
         });
       });

@@ -4,6 +4,10 @@
       background: #101512;
       color: #ecf1e8;
       font-synthesis: none;
+      --ui-accent: #57c2c8;
+      --ui-accent-bright: #a4e7e8;
+      --ui-accent-dark: #19383b;
+      accent-color: var(--ui-accent);
     }
 
     * { box-sizing: border-box; }
@@ -453,8 +457,70 @@
       cursor: pointer;
     }
     button:hover { background: #d3f184; }
-    .bottombar { min-height: 38px; justify-content: center; color: #879183; font-size: 9px; }
-    kbd { padding: 2px 5px; border: 1px solid #475044; color: #d4dccd; font: inherit; }
+    .bottombar {
+      min-height: 52px; padding: 8px 18px; justify-content: center; flex-wrap: wrap;
+      gap: 7px 10px; color: #9aa8a6; font-size: 9px; line-height: 1.5;
+    }
+    .bottombar span { white-space: nowrap; }
+    kbd { display: inline-block; margin: 0 2px; padding: 2px 5px; border: 1px solid #475653; color: #d4e4e2; font: inherit; }
+
+    .achievement-toast {
+      position: absolute; z-index: 4; left: 50%; bottom: 20%; display: grid; gap: 4px;
+      width: min(320px, 85%); padding: 12px 16px; transform: translate(-50%, 10px);
+      border: 1px solid var(--ui-accent); background: rgba(10, 23, 24, .94);
+      color: #dcebea; text-align: center; text-shadow: 0 2px 6px #000;
+      opacity: 0; pointer-events: none;
+    }
+    .achievement-toast[hidden] { display: none; }
+    .achievement-toast.visible { animation: achievement-in .22s ease-out forwards; }
+    .achievement-toast__label { color: var(--ui-accent); font-size: 8px; font-weight: 800; letter-spacing: .2em; }
+    .achievement-toast strong { color: var(--ui-accent-bright); font-size: 15px; letter-spacing: .12em; text-transform: uppercase; }
+    .achievement-toast > span:last-child { color: #aebdbb; font-size: 10px; }
+    @keyframes achievement-in {
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+    .deploy-countdown {
+      position: absolute; z-index: 6; inset: 0; display: grid; align-content: center; justify-items: center;
+      gap: 4px; background: rgba(5, 10, 11, .38); pointer-events: none;
+    }
+    .deploy-countdown[hidden] { display: none; }
+    .deploy-countdown strong { color: #f0f7f6; font-size: clamp(68px, 15vw, 128px); line-height: .9; text-shadow: 0 5px 30px #000; }
+    .deploy-countdown strong.pulse { animation: countdown-pulse .88s ease-out both; }
+    .deploy-countdown span { color: var(--ui-accent-bright); font-size: 10px; font-weight: 800; letter-spacing: .32em; }
+    @keyframes countdown-pulse {
+      0% { opacity: .35; transform: scale(1.35); }
+      24% { opacity: 1; }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .loadout-panel { text-align: left; }
+    .attachment-options label { min-height: 34px; padding: 7px 9px; border: 1px solid #3c5151; background: #10191a; }
+    .attachment-options label:has(input:disabled) { opacity: .58; }
+    [data-attachment-status] { color: #e6bb76; font-size: 8px; letter-spacing: .06em; }
+
+    .brand span, .dot, .eyebrow, .ammo, .credits-value b, .tactical-counts b,
+    .hit-confirmation, .replay-indicator, .map-card.selected, .mode-card.selected strong,
+    .weapon-slot.active, .setting-row output, .menu-panel strong, .shop-balance b,
+    .leaderboard-panel li span, .kicker, .avatar {
+      color: var(--ui-accent-bright);
+    }
+    .dot { background: var(--ui-accent); box-shadow: 0 0 10px var(--ui-accent); }
+    .crosshair.targeting::before, .crosshair.targeting::after,
+    .scope-overlay.targeting .scope-reticle--center { background: var(--ui-accent); border-color: var(--ui-accent); box-shadow: 0 0 7px var(--ui-accent); }
+    .health-fill { background: var(--ui-accent); }
+    .map-card.selected, .mode-card.selected, .weapon-slot.active, .avatar, .room-entry.selected {
+      border-color: var(--ui-accent); background-color: var(--ui-accent-dark);
+    }
+    .menu-panel input:focus { border-color: var(--ui-accent); box-shadow: 0 0 0 2px #57c2c82a; }
+    .menu-panel input:focus, .menu-panel input[type="range"], .attachment-options input,
+    .setting-row input[type="range"] { accent-color: var(--ui-accent); }
+    .menu-actions > button:not(.button-secondary), .profile-form > button,
+    .panel > button:not(.button-secondary) { background: var(--ui-accent); color: #071415; }
+    .menu-actions > button:not(.button-secondary):hover, .profile-form > button:hover,
+    .panel > button:not(.button-secondary):hover { background: var(--ui-accent-bright); }
+    .touch-action--fire { border-color: var(--ui-accent); background: #19383bdd; }
+    .touch-action.active { border-color: var(--ui-accent-bright); background: #28575b; }
+    .touch-stick-knob { border-color: #a4e7e8aa; background: #57c2c855; }
+    .stage .hud .health-fill { background: var(--ui-accent) !important; }
 
     @media (any-pointer: coarse), (max-width: 760px) {
       body { display: block; }
@@ -480,7 +546,7 @@
       }
       .touch-stick-knob {
         position: absolute; left: 50%; top: 50%; width: 40%; aspect-ratio: 1;
-        border: 1px solid #d3ef87aa; border-radius: 50%; background: #c1e16d55;
+        border: 1px solid #a4e7e8aa; border-radius: 50%; background: #57c2c855;
         transform: translate(-50%, -50%);
       }
       .touch-actions {
@@ -493,8 +559,8 @@
         border: 1px solid #dce5d477; background: #101510bb; color: #e4e9dc;
         font-size: 8px; letter-spacing: .08em; touch-action: none;
       }
-      .touch-action--fire { border-color: #c1e16d; background: #344522dd; color: #e8f4ce; }
-      .touch-action.active { background: #536c35; border-color: #d3ef87; }
+      .touch-action--fire { border-color: var(--ui-accent); background: #19383bdd; color: #e8f4ce; }
+      .touch-action.active { background: #28575b; border-color: var(--ui-accent-bright); }
       .hud { padding: 12px; }
       .hud-column { justify-content: flex-start; gap: 12px; }
       .health-track { width: 72px; }
