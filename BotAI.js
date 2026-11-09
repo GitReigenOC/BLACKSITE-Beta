@@ -54,6 +54,7 @@ export class BotAI {
   }
 
   findCover(grid, enemy, player) {
+    if (enemy.type === "zombie") return null;
     let candidate = null;
     let candidateDistance = Infinity;
     for (let rowOffset = -5; rowOffset <= 5; rowOffset++) {
@@ -72,6 +73,7 @@ export class BotAI {
 
   update(enemy, player, dt, grid, weapon) {
     const boss = enemy.type === "boss";
+    const isZombie = enemy.type === "zombie";
     const dx = player.x - enemy.x;
     const dy = player.y - enemy.y;
     const distance = Math.max(.001, Math.hypot(dx, dy));
@@ -81,6 +83,22 @@ export class BotAI {
     enemy.facingX = dx / distance;
     enemy.facingY = dy / distance;
     const hasLineOfSight = this.hasLineOfSight(grid, enemy, player);
+
+    // Zombie AI override: Relentless sprint to player, no cover, no dodge
+    if (isZombie) {
+      enemy.underFire = false;
+      enemy.cover = null;
+      enemy.state = "seek";
+      return {
+        state: "seek",
+        moveX: dx / distance,
+        moveY: dy / distance,
+        sprinting: true,
+        fire: distance <= 1.35 && enemy.attack <= 0,
+        distance,
+        hasLineOfSight
+      };
+    }
 
     if (enemy.underFire) {
       enemy.underFire = false;
@@ -140,7 +158,7 @@ export class BotAI {
     if (enemy.repathTimer <= 0 || enemy.pathTarget !== pathTarget || !enemy.path?.length) {
       enemy.path = this.findPath(grid, enemy, pathDestination);
       enemy.pathTarget = pathTarget;
-      enemy.repathTimer = this.repathInterval;
+      enemy.repathInterval = this.repathInterval;
     }
     while (enemy.path?.length && Math.hypot(enemy.path[0].x - enemy.x, enemy.path[0].y - enemy.y) < .22) {
       enemy.path.shift();
