@@ -72,6 +72,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       let weaponAnchor = null;
       let muzzleLight = null;
       let parryShield = null;
+      const heldWeaponScale = .72;
       let weaponModels = [];
       let weaponMuzzles = [];
       let weaponSights = [];
@@ -585,7 +586,10 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         map.forEach((row, mapY) => [...row].forEach((cell, mapX) => {
           if (cell !== "1") return;
           const edge = mapX === 0 || mapY === 0 || mapX === width - 1 || mapY === depth - 1;
-          const height = definition.outdoor ? (edge ? 3.2 : .95 + ((mapX * 7 + mapY * 3) % 4) * .22) : 4;
+          const height = definition.outdoor
+            ? edge ? mapId === "desert_outpost" ? 1.45 : 3.2
+              : .95 + ((mapX * 7 + mapY * 3) % 4) * .22
+            : 4;
           transform.position.set(mapX + .5, height / 2, -mapY - .5);
           transform.scale.set(1, height, 1);
           transform.updateMatrix();
@@ -625,6 +629,23 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             mapGroup.add(fragment);
             animatedMapProps.push(fragment);
           });
+        }
+
+        if (mapId === "desert_outpost") {
+          const duneMaterial = cachedMaterial("outpost-dune", "#a98755", { roughness: 1 });
+          if (!staticGeometries.has("outpost-dune")) {
+            staticGeometries.set("outpost-dune", new THREE.SphereGeometry(1, 18, 12));
+          }
+          const duneGeometry = staticGeometries.get("outpost-dune");
+          for (const [x, y, scaleX, scaleZ] of [
+            [-2.5, 7, 5, 4], [30.5, 18, 5, 5], [8, -2.5, 6, 4], [21, 30.5, 7, 5]
+          ]) {
+            const dune = new THREE.Mesh(duneGeometry, duneMaterial);
+            dune.position.set(x, -.1, -y);
+            dune.scale.set(scaleX, 2.4, scaleZ);
+            dune.receiveShadow = true;
+            mapGroup.add(dune);
+          }
         }
 
         if (mapId === "pool") {
@@ -797,12 +818,16 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
               for (const side of [-1, 1]) {
                 const panel = new THREE.Mesh(cachedBoxGeometry(.07, 1.65, 2.5), canvasMaterial);
                 panel.position.set(side * .56, .86, 0);
-                panel.rotation.z = side * -.62;
+                panel.rotation.z = side * .62;
                 panel.castShadow = true;
                 panel.receiveShadow = true;
                 tent.add(panel);
                 mapObstacleMeshes.push(panel);
               }
+              const ridge = new THREE.Mesh(cachedBoxGeometry(.14, .14, 2.45), canvasMaterial);
+              ridge.position.y = 1.58;
+              tent.add(ridge);
+              mapObstacleMeshes.push(ridge);
               tent.position.set(x, 0, -y);
               mapGroup.add(tent);
             }
@@ -2500,6 +2525,15 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         return aiming ? hasScope() ? controlSettings.scopeSensitivity : .66 : 1;
       }
 
+      function getAimDirection(angle = player.angle, pitch = playerPitch) {
+        const horizontalLook = Math.cos(pitch);
+        return new THREE.Vector3(
+          Math.cos(angle) * horizontalLook,
+          Math.sin(pitch),
+          -Math.sin(angle) * horizontalLook
+        ).normalize();
+      }
+
       function alignWeaponSight() {
         const sight = weaponSights[player.weaponIndex];
         if (!sight) return;
@@ -2956,7 +2990,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         });
         const modelScale = enemy.type === "boss" ? 1.72 : enemy.type === "brute" ? 1.42 : 1.2;
         group.scale.setScalar(modelScale);
-        botWeapons.scale.setScalar(1 / modelScale);
+        botWeapons.scale.setScalar(heldWeaponScale / modelScale);
         scene.add(group);
         enemyModels.set(enemy, group);
         return group;
@@ -3079,7 +3113,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const handOffset = weaponAssetLoader.getHandOffset(enemy.weaponIndex);
         weapon.position.set(...handOffset.position);
         weapon.rotation.set(...handOffset.rotation);
-        weapon.scale.setScalar(handOffset.scale / (model.scale.x || 1));
+        weapon.scale.setScalar(handOffset.scale * heldWeaponScale / (model.scale.x || 1));
         weapon.userData.isWeapon = true;
         weapon.traverse(object => {
           object.userData.isWeapon = true;
@@ -4061,11 +4095,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             jumpHeight - (dashTimer > 0 ? .22 : 0),
           -player.y
         );
-        const viewDirection = new THREE.Vector3(
-          Math.cos(player.angle) * Math.cos(playerPitch),
-          Math.sin(playerPitch),
-          -Math.sin(player.angle) * Math.cos(playerPitch)
-        ).normalize();
+        const viewDirection = getAimDirection();
         if (playbackSample) {
           const subject = playbackSample.player;
           if (subject.cameraPosition && subject.cameraDirection) {
@@ -4297,9 +4327,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           const targets = enemies
             .filter(enemy => enemy.health > 0 && (gameMode !== "tdm" || enemy.team === 1))
             .map(enemy => enemyModels.get(enemy) || createEnemyModel(enemy));
-          const aimDirection = camera.getWorldDirection(new THREE.Vector3())
-            .applyAxisAngle(new THREE.Vector3(0, 1, 0), shotAngle - player.angle)
-            .normalize();
+          const aimDirection = getAimDirection(shotAngle);
           raycaster.set(camera.position, aimDirection);
           raycaster.near = 0;
           raycaster.far = maxDistance;
