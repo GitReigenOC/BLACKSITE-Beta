@@ -72,7 +72,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       let weaponAnchor = null;
       let muzzleLight = null;
       let parryShield = null;
-      const heldWeaponScale = .3;
+      const heldWeaponScale = .16;
       let weaponModels = [];
       let weaponMuzzles = [];
       let weaponSights = [];
