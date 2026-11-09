@@ -72,7 +72,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
       let weaponAnchor = null;
       let muzzleLight = null;
       let parryShield = null;
-      const heldWeaponScale = .72;
+      const heldWeaponScale = .48;
       let weaponModels = [];
       let weaponMuzzles = [];
       let weaponSights = [];
@@ -389,7 +389,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         ],
         hazards: [],
         elevationZones: [],
-        fogNear: 26, fogFar: 58, ambientPower: .68, sunPower: 3.6
+        floor: "#be985b", floorLine: "#d5b578",
+        fog: "#cfaa70", background: "#d7b87e", ambient: "#f0d7a1", sun: "#ffe5ad",
+        fogNear: 36, fogFar: 92, ambientPower: .78, sunPower: 3.8
       });
       mapDefinitions.subway_terminal = createAuthoredMap("Subway Terminal", createSubwayGrid(), { x: 13.5, y: 13.5 }, {
         floor: "#3d4948", floorLine: "#697271", wall: "#56615f", wallLine: "#303938",
@@ -460,33 +462,58 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
 
       function cachedArenaTexture(key, baseColor, lineColor, repeatX, repeatY) {
         if (!arenaTextures.has(key)) {
-          arenaTextures.set(key, createArenaTextures(baseColor, lineColor, repeatX, repeatY));
+          arenaTextures.set(key, createArenaTextures(baseColor, lineColor, repeatX, repeatY, key === "desert_outpost-floor"));
         }
         return arenaTextures.get(key);
       }
 
-      function createArenaTextures(baseColor, lineColor, repeatX, repeatY) {
+      function createArenaTextures(baseColor, lineColor, repeatX, repeatY, sand = false) {
         const textureCanvas = document.createElement("canvas");
         textureCanvas.width = 256;
         textureCanvas.height = 256;
         const textureContext = textureCanvas.getContext("2d");
-        textureContext.fillStyle = baseColor;
-        textureContext.fillRect(0, 0, 256, 256);
-        textureContext.strokeStyle = lineColor;
-        textureContext.lineWidth = 2;
-        for (let offset = 0; offset <= 256; offset += 64) {
-          textureContext.beginPath();
-          textureContext.moveTo(offset, 0);
-          textureContext.lineTo(offset, 256);
-          textureContext.moveTo(0, offset);
-          textureContext.lineTo(256, offset);
-          textureContext.stroke();
-        }
-        for (let i = 0; i < 180; i++) {
-          const x = (i * 73) % 256;
-          const y = (i * 131) % 256;
-          textureContext.fillStyle = i % 2 ? "#ffffff0b" : "#00000012";
-          textureContext.fillRect(x, y, 2 + i % 5, 2);
+        if (sand) {
+          const sandImage = textureContext.createImageData(256, 256);
+          for (let y = 0; y < 256; y++) {
+            for (let x = 0; x < 256; x++) {
+              const index = (y * 256 + x) * 4;
+              const ripple = Math.sin((x + y * .38) * .13) * 5 + Math.sin((x - y * .22) * .045) * 7;
+              const grain = ((x * 127 + y * 311 + x * y * 17) % 19) - 9;
+              sandImage.data[index] = 190 + ripple + grain;
+              sandImage.data[index + 1] = 151 + ripple * .78 + grain;
+              sandImage.data[index + 2] = 91 + ripple * .42 + grain * .65;
+              sandImage.data[index + 3] = 255;
+            }
+          }
+          textureContext.putImageData(sandImage, 0, 0);
+          textureContext.strokeStyle = "#edd39a30";
+          textureContext.lineWidth = 1.5;
+          for (let row = 0; row < 18; row++) {
+            const y = row * 16;
+            textureContext.beginPath();
+            textureContext.moveTo(0, y + Math.sin(row) * 4);
+            textureContext.bezierCurveTo(72, y - 5, 168, y + 6, 256, y + Math.cos(row) * 4);
+            textureContext.stroke();
+          }
+        } else {
+          textureContext.fillStyle = baseColor;
+          textureContext.fillRect(0, 0, 256, 256);
+          textureContext.strokeStyle = lineColor;
+          textureContext.lineWidth = 2;
+          for (let offset = 0; offset <= 256; offset += 64) {
+            textureContext.beginPath();
+            textureContext.moveTo(offset, 0);
+            textureContext.lineTo(offset, 256);
+            textureContext.moveTo(0, offset);
+            textureContext.lineTo(256, offset);
+            textureContext.stroke();
+          }
+          for (let i = 0; i < 180; i++) {
+            const x = (i * 73) % 256;
+            const y = (i * 131) % 256;
+            textureContext.fillStyle = i % 2 ? "#ffffff0b" : "#00000012";
+            textureContext.fillRect(x, y, 2 + i % 5, 2);
+          }
         }
         const normalCanvas = document.createElement("canvas");
         normalCanvas.width = normalCanvas.height = 256;
@@ -495,8 +522,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const heights = new Uint8Array(256 * 256);
         for (let y = 0; y < 256; y++) {
           for (let x = 0; x < 256; x++) {
-            const edge = x % 64 < 2 || y % 64 < 2;
-            heights[y * 256 + x] = edge ? 64 : 116 + ((x * 73 + y * 151 + x * y) % 32);
+            const edge = !sand && (x % 64 < 2 || y % 64 < 2);
+            const sandRipple = sand ? Math.sin((x + y * .38) * .13) * 8 + Math.sin((x - y * .22) * .045) * 12 : 0;
+            heights[y * 256 + x] = edge ? 64 : 116 + sandRipple + ((x * 73 + y * 151 + x * y) % 32);
           }
         }
         for (let y = 0; y < 256; y++) {
@@ -521,7 +549,8 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         for (let y = 0; y < 256; y++) {
           for (let x = 0; x < 256; x++) {
             const index = (y * 256 + x) * 4;
-            const value = x % 64 < 2 || y % 64 < 2 ? 236 : 178 + ((x * 31 + y * 47 + x * y) % 56);
+            const value = sand ? 238 + ((x * 31 + y * 47 + x * y) % 18)
+              : x % 64 < 2 || y % 64 < 2 ? 236 : 178 + ((x * 31 + y * 47 + x * y) % 56);
             roughnessImage.data[index] = roughnessImage.data[index + 1] = roughnessImage.data[index + 2] = value;
             roughnessImage.data[index + 3] = 255;
           }
@@ -645,6 +674,23 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             dune.scale.set(scaleX, 2.4, scaleZ);
             dune.receiveShadow = true;
             mapGroup.add(dune);
+          }
+          const rockMaterials = [
+            cachedMaterial("outpost-rock", "#806744", { roughness: 1 }),
+            cachedMaterial("outpost-rock-light", "#9b8052", { roughness: 1 })
+          ];
+          for (const [x, y, size] of [
+            [-1.6, 12, 1], [-1.2, 14, .72], [29.4, 7, .85], [30.1, 9, 1.1],
+            [11, -1.3, .7], [14, -1.1, 1], [19, 29.2, .95], [22, 29.5, .65],
+            [2.4, 28.5, .8], [26.8, 2, .7]
+          ]) {
+            const rock = new THREE.Mesh(duneGeometry, rockMaterials[Math.round(size * 10) % 2]);
+            rock.position.set(x, size * .27 - .04, -y);
+            rock.scale.set(size * .72, size * .56, size);
+            rock.rotation.set(size * .3, size * 1.7, size * .2);
+            rock.castShadow = true;
+            rock.receiveShadow = true;
+            mapGroup.add(rock);
           }
         }
 
@@ -867,6 +913,17 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
               crate.castShadow = true;
               mapGroup.add(crate);
               mapObstacleMeshes.push(crate);
+            }
+            const barrelMaterial = cachedMaterial("outpost-fuel-barrel", "#765337", {
+              roughness: .82, metalness: .18
+            });
+            for (const [x, y] of [[8, 5], [9, 5], [20, 22], [21, 22], [18, 16]]) {
+              const barrel = new THREE.Mesh(cachedCylinderGeometry(.27, .27, .82, 12), barrelMaterial);
+              barrel.position.set(x, .41, -y);
+              barrel.castShadow = true;
+              barrel.receiveShadow = true;
+              mapGroup.add(barrel);
+              mapObstacleMeshes.push(barrel);
             }
             [[6, 5], [22, 22]].forEach(([x, y], index) => {
               const light = new THREE.PointLight(index ? "#ff9d58" : "#ffd58a", 1.5, 8, 2);
@@ -4230,7 +4287,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           muzzleLight.intensity = muzzleFlash > 0 ? 3.5 : 0;
           weaponModels.forEach((model, index) => {
             model.visible = !sukunaActive && index === player.weaponIndex && !(aiming && hasScope());
-            const firearmScale = (weapon.melee ? 1 : .98) * viewModelScale;
+            const firearmScale = (weapon.melee ? 1 : 1.28) * viewModelScale;
             model.scale.setScalar(index === player.weaponIndex ? firearmScale * inspectScale : 1);
             let magazine = null;
             model.traverse(object => {
