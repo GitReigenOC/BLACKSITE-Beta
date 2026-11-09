@@ -382,7 +382,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         collisionBoxes: [
           { minX: 11, maxX: 15, minY: 4, maxY: 6, minHeight: 0, maxHeight: 1.25, kind: "sandbags" },
           { minX: 13, maxX: 17, minY: 21, maxY: 23, minHeight: 0, maxHeight: 1.25, kind: "sandbags" },
-          { minX: 22, maxX: 25, minY: 11, maxY: 13, minHeight: 0, maxHeight: 2.4, kind: "watchtower" }
+          { minX: 22, maxX: 25, minY: 11, maxY: 13, minHeight: 0, maxHeight: 2.4, kind: "watchtower" },
+          { minX: 4.3, maxX: 6.7, minY: 11, maxY: 14, minHeight: 0, maxHeight: 1.8, kind: "field-tent" },
+          { minX: 21.8, maxX: 24.2, minY: 24, maxY: 27, minHeight: 0, maxHeight: 1.8, kind: "field-tent" }
         ],
         hazards: [],
         elevationZones: [],
@@ -789,6 +791,21 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
               mapGroup.add(barricade);
               mapObstacleMeshes.push(barricade);
             }
+            const canvasMaterial = cachedMaterial("outpost-canvas", "#b39a69", { roughness: .96 });
+            for (const [x, y] of [[5.5, 12.5], [23, 25.5]]) {
+              const tent = new THREE.Group();
+              for (const side of [-1, 1]) {
+                const panel = new THREE.Mesh(cachedBoxGeometry(.07, 1.65, 2.5), canvasMaterial);
+                panel.position.set(side * .56, .86, 0);
+                panel.rotation.z = side * -.62;
+                panel.castShadow = true;
+                panel.receiveShadow = true;
+                tent.add(panel);
+                mapObstacleMeshes.push(panel);
+              }
+              tent.position.set(x, 0, -y);
+              mapGroup.add(tent);
+            }
             const watchtowerMaterial = cachedMaterial("outpost-watchtower", "#4d483b", {
               roughness: .78, metalness: .28
             });
@@ -805,8 +822,18 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
             }
             tower.position.set(23.5, 0, -12);
             tower.traverse(object => { if (object.isMesh) object.castShadow = true; });
+            const antenna = new THREE.Mesh(cachedCylinderGeometry(.035, .035, 2, 8), watchtowerMaterial);
+            antenna.position.set(0, 4.6, 0);
+            const antennaBar = new THREE.Mesh(cachedBoxGeometry(.9, .045, .045), watchtowerMaterial);
+            antennaBar.position.set(0, 4.55, 0);
+            const towerFlag = new THREE.Mesh(
+              cachedBoxGeometry(.75, .42, .035),
+              cachedMaterial("outpost-flag", "#a34f35", { roughness: .82 })
+            );
+            towerFlag.position.set(.4, 3.9, 0);
+            tower.add(antenna, antennaBar, towerFlag);
             mapGroup.add(tower);
-            mapObstacleMeshes.push(tower.children[0], tower.children[1]);
+            mapObstacleMeshes.push(tower.children[0], tower.children[1], antenna, antennaBar, towerFlag);
             const crateMaterial = cachedMaterial("outpost-crates", "#64513a", { roughness: .9 });
             for (const [x, y, rotation] of [[4, 14, .2], [23, 16, -.35], [5, 18, .5]]) {
               const crate = new THREE.Mesh(cachedBoxGeometry(1.2, .9, 1.1), crateMaterial);
@@ -902,36 +929,38 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           }
         }
 
-        const fixtureMaterial = cachedMaterial(`${mapId}-fixture`, definition.outdoor ? "#45443b" : "#242a23", {
-          metalness: .48, roughness: .42
-        });
-        const glowMaterial = cachedMaterial(`${mapId}-glow`, definition.lightColor, {
-          emissive: definition.lightColor, emissiveIntensity: mapId === "pool" ? 1.7 : 1.2
-        });
-        let lightIndex = 0;
-        const step = mapId === "arena" ? 3 : 7;
-        for (let y = 2; y < depth - 1 && lightIndex < 10; y += step) {
-          for (let x = 2; x < width - 1 && lightIndex < 10; x += step) {
-            const height = definition.outdoor ? 2.6 : 3.92;
-            const fixture = new THREE.Mesh(cachedBoxGeometry(.9, .08, .28), fixtureMaterial);
-            fixture.position.set(x + .5, height, -y - .5);
-            mapGroup.add(fixture);
-            const diffuser = new THREE.Mesh(cachedBoxGeometry(.72, .035, .17), glowMaterial);
-            diffuser.position.set(x + .5, height - .06, -y - .5);
-            mapGroup.add(diffuser);
-            const light = new THREE.PointLight(definition.lightColor,
-              mapId === "arena" && lightIndex === 0 ? 2.2 : mapId === "pool" ? 1.05 :
-                mapId === "iron_foundry" ? .55 : 1.25,
-              mapId === "battlefield" ? 10 : 8, 2);
-            light.position.set(x + .5, height - .35, -y - .5);
-            light.userData.flicker = mapId === "pool" || mapId === "battlefield";
-            light.userData.baseIntensity = light.intensity;
-            mapGroup.add(light);
-            if (light.userData.flicker) dynamicMapLights.push(light);
-            lightIndex++;
+        if (mapId !== "desert_outpost" && mapId !== "rooftop") {
+          const fixtureMaterial = cachedMaterial(`${mapId}-fixture`, definition.outdoor ? "#45443b" : "#242a23", {
+            metalness: .48, roughness: .42
+          });
+          const glowMaterial = cachedMaterial(`${mapId}-glow`, definition.lightColor, {
+            emissive: definition.lightColor, emissiveIntensity: mapId === "pool" ? 1.7 : 1.2
+          });
+          let lightIndex = 0;
+          const step = mapId === "arena" ? 3 : 7;
+          for (let y = 2; y < depth - 1 && lightIndex < 10; y += step) {
+            for (let x = 2; x < width - 1 && lightIndex < 10; x += step) {
+              const height = definition.outdoor ? 2.6 : 3.92;
+              const fixture = new THREE.Mesh(cachedBoxGeometry(.9, .08, .28), fixtureMaterial);
+              fixture.position.set(x + .5, height, -y - .5);
+              mapGroup.add(fixture);
+              const diffuser = new THREE.Mesh(cachedBoxGeometry(.72, .035, .17), glowMaterial);
+              diffuser.position.set(x + .5, height - .06, -y - .5);
+              mapGroup.add(diffuser);
+              const light = new THREE.PointLight(definition.lightColor,
+                mapId === "arena" && lightIndex === 0 ? 2.2 : mapId === "pool" ? 1.05 :
+                  mapId === "iron_foundry" ? .55 : 1.25,
+                mapId === "battlefield" ? 10 : 8, 2);
+              light.position.set(x + .5, height - .35, -y - .5);
+              light.userData.flicker = mapId === "pool" || mapId === "battlefield";
+              light.userData.baseIntensity = light.intensity;
+              mapGroup.add(light);
+              if (light.userData.flicker) dynamicMapLights.push(light);
+              lightIndex++;
+            }
           }
         }
-        if (mapId !== "arena") {
+        if (mapId !== "arena" && mapId !== "desert_outpost" && mapId !== "rooftop") {
           [[width * .28, mapId === "pool" ? "#42e8ef" : "#ffd08b"],
             [width * .72, mapId === "pool" ? "#70baff" : "#ff885b"]].forEach(([x, color], index) => {
             const spot = new THREE.SpotLight(color, mapId === "pool" ? 1.15 : 2.2, 24, .52, .45, 1.4);
@@ -2491,15 +2520,6 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         return camera.position.clone();
       }
 
-      function getPlayerMuzzleWorldDirection() {
-        const muzzle = weaponMuzzles[player.weaponIndex];
-        if (muzzle) {
-          muzzle.updateWorldMatrix(true, false);
-          return new THREE.Vector3(0, 0, -1).transformDirection(muzzle.matrixWorld).normalize();
-        }
-        return camera.getWorldDirection(new THREE.Vector3()).normalize();
-      }
-
       function getEnemyMuzzleWorldTransform(enemy) {
         const model = enemyModels.get(enemy);
         const muzzle = model?.userData.weaponMuzzle;
@@ -2934,7 +2954,9 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
               : /torso|vest|pouch/i.test(object.name) ? "chest" : "limb";
           }
         });
-        group.scale.setScalar(enemy.type === "boss" ? 1.72 : enemy.type === "brute" ? 1.42 : 1.2);
+        const modelScale = enemy.type === "boss" ? 1.72 : enemy.type === "brute" ? 1.42 : 1.2;
+        group.scale.setScalar(modelScale);
+        botWeapons.scale.setScalar(1 / modelScale);
         scene.add(group);
         enemyModels.set(enemy, group);
         return group;
@@ -3057,7 +3079,7 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
         const handOffset = weaponAssetLoader.getHandOffset(enemy.weaponIndex);
         weapon.position.set(...handOffset.position);
         weapon.rotation.set(...handOffset.rotation);
-        weapon.scale.setScalar(handOffset.scale);
+        weapon.scale.setScalar(handOffset.scale / (model.scale.x || 1));
         weapon.userData.isWeapon = true;
         weapon.traverse(object => {
           object.userData.isWeapon = true;
@@ -4275,13 +4297,24 @@ import { WeaponAssetLoader } from "./WeaponAssetLoader.js";
           const targets = enemies
             .filter(enemy => enemy.health > 0 && (gameMode !== "tdm" || enemy.team === 1))
             .map(enemy => enemyModels.get(enemy) || createEnemyModel(enemy));
-          const shotDirection = getPlayerMuzzleWorldDirection()
+          const aimDirection = camera.getWorldDirection(new THREE.Vector3())
             .applyAxisAngle(new THREE.Vector3(0, 1, 0), shotAngle - player.angle)
             .normalize();
-          raycaster.set(
-            muzzlePosition,
-            shotDirection
-          );
+          raycaster.set(camera.position, aimDirection);
+          raycaster.near = 0;
+          raycaster.far = maxDistance;
+          const aimWallHits = [];
+          if (mapWalls) aimWallHits.push(...raycaster.intersectObject(mapWalls, false));
+          if (mapObstacleMeshes.length) {
+            aimWallHits.push(...raycaster.intersectObjects(mapObstacleMeshes, false));
+          }
+          const aimWallHit = aimWallHits.sort((a, b) => a.distance - b.distance)[0] || null;
+          const aimTargetHit = raycaster.intersectObjects(targets, true)
+            .find(hit => !aimWallHit || hit.distance < aimWallHit.distance);
+          const aimPoint = aimTargetHit?.point || aimWallHit?.point ||
+            raycaster.ray.at(maxDistance, new THREE.Vector3());
+          const shotDirection = aimPoint.clone().sub(muzzlePosition).normalize();
+          raycaster.set(muzzlePosition, shotDirection);
           raycaster.near = 0;
           raycaster.far = maxDistance;
           const wallIntersections = [];
